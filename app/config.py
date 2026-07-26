@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     higgsfield_api_key: str | None = Field(default=None, alias="HIGGSFIELD_API_KEY")
     provider: Literal["higgsfield", "fake"] = Field(default="higgsfield", alias="PROVIDER")
 
+    local_storage_dir: str = Field(default="./data/storage", alias="LOCAL_STORAGE_DIR")
+
+    # Testing/dev-only knob for FakeProvider failure injection (not a deployment var).
+    fake_fail_mode: Literal["submit", "poll", "timeout", "none"] = Field(
+        default="none", alias="FAKE_FAIL_MODE"
+    )
+
     max_image_bytes: int = Field(default=15_728_640, alias="MAX_IMAGE_BYTES")
     job_deadline_seconds: int = Field(default=900, alias="JOB_DEADLINE_SECONDS")
     dedupe_window_seconds: int = Field(default=86_400, alias="DEDUPE_WINDOW_SECONDS")
