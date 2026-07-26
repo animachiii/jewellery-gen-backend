@@ -1,0 +1,8 @@
+{
+  "matrix_version": "stub-v1",
+  "combinations": [
+    {"jewelry_type": "ANKLET", "service": "FEMALE_MODEL_TRADITIONAL"},
+    {"jewelry_type": "RING", "service": "PRODUCT_STYLING_MODERN"},
+    {"jewelry_type": "NECKLACE", "service": "MANNEQUIN_MODERN"}
+  ]
+}

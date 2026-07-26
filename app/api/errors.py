@@ -137,6 +137,19 @@ class ValidationAppError(AppError):
         )
 
 
+class StorageError(AppError):
+    """502 — a job claims an asset via `asset_refs` but the storage adapter
+    can't resolve it (e.g. `StorageRefNotFoundError`). A missing file for a
+    job that claims to have it is a storage-layer inconsistency, not a 404."""
+
+    def __init__(self, message: str = "Stored asset could not be retrieved.") -> None:
+        super().__init__(
+            code=ErrorCode.STORAGE_ERROR.value,
+            http_status=status.HTTP_502_BAD_GATEWAY,
+            message=message,
+        )
+
+
 class DomainError(AppError):
     """Generic constructor for business/domain ErrorCode values (docs/schema.md
     §1) that don't yet have a dedicated subclass."""
