@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff check)
+        run: ruff check .
+
+      - name: Format check (ruff format)
+        run: ruff format --check .
+
+      - name: Type check (mypy)
+        run: mypy app/
+
+      - name: Test (pytest)
+        env:
+          ENV: local
+          REDIS_URL: redis://localhost:6379/0
+          API_KEYS: "ci:ci-test-key"
+          ADMIN_API_KEY: "ci-admin-key"
+          GOOGLE_SHEET_ID: "ci-sheet-id"
+          GOOGLE_SERVICE_ACCOUNT_JSON: "eyJjbGllbnRfZW1haWwiOiAiY2lAZXhhbXBsZS5jb20ifQ=="
+          GDRIVE_FOLDER_ID: "ci-folder-id"
+          GEMINI_API_KEY: "ci-gemini-key"
+        run: pytest

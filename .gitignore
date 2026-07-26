@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+*service-account*.json
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+ui/assets/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.DS_Store
