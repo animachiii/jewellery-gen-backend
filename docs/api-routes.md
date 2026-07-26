@@ -171,6 +171,8 @@ Returns only `active` rows. **Never returns prompt text** — prompts are the cl
 
 ## Admin
 
+> **Phase 1 status:** both routes are real, typed, admin-gated endpoints — built in Phase 1 Step 6 solely so the frozen contract has all ten routes (`app/api/v1/admin.py`). `matrix/refresh` is a stub returning the fixed worker-internal `current_matrix_version()` with `rows_loaded: 0, changed: false` (nothing to force-reload yet — Phase 3 replaces this with a real Sheets re-read). `admin/jobs/{id}` returns the full real job record from Redis; already not ownership-scoped as designed.
+
 ### `POST /api/v1/admin/matrix/refresh`
 Force an immediate re-read of the `PromptMatrix` tab, bypassing the TTL. Give this to the client's operator so a prompt edit can be made live on demand.
 
@@ -191,6 +193,8 @@ Liveness. **No auth.** Returns 200 `{"status":"ok"}` if the process is up. Never
 
 ### `GET /health/deep`
 Readiness. **Admin key.** Checks Redis ping, Sheets read, Drive reachability, queue depth.
+
+> **Phase 1 status:** Redis is checked for real (`PING`, with latency). `sheets`/`drive`/`queue` are hardcoded `{"ok": true}` stubs (Sheets and Drive have no live-reachability check wired up yet; real queue-depth introspection is Phase 8) — enriched incrementally as those subsystems come online. Returns 503 only when the Redis check fails.
 
 ```json
 {

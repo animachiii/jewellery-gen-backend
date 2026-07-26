@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from typing import cast
 
@@ -45,6 +46,8 @@ async def update_job(redis: Redis, job_id: str, **fields: object) -> None:
             hash_updates[key] = "1" if value else "0"
         elif isinstance(value, datetime):
             hash_updates[key] = value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        elif isinstance(value, list | dict):
+            hash_updates[key] = json.dumps(value)
         else:
             hash_updates[key] = str(value)
 

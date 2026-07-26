@@ -7,6 +7,7 @@ from app.core.logging import configure_logging, get_logger
 from app.store.rehydrate import rehydrate
 from app.store.sheets_store import GoogleSheetsClient, SheetsClient
 from app.worker.sweeper import sweep
+from app.worker.tasks import run_job_pipeline, run_job_pipeline_from_resolve
 
 log = get_logger(__name__)
 
@@ -56,7 +57,7 @@ async def sweep_cron(ctx: dict[str, object]) -> None:
 
 
 class WorkerSettings:
-    functions: list[object] = [noop]
+    functions: list[object] = [noop, run_job_pipeline, run_job_pipeline_from_resolve]
     cron_jobs: list[object] = [cron(sweep_cron, second=0, run_at_startup=False)]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = settings.worker_concurrency

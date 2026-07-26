@@ -11,6 +11,7 @@ that's structurally guaranteed rather than filtered out here.
 """
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +20,58 @@ from app.models.job import _iso
 from app.models.schemas import MatrixCombination, MatrixResponse
 
 _FIXTURE_PATH = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "matrix.json"
+
+_MATRIX_VERSION = "stub-v1"
+
+
+@dataclass
+class MatrixRow:
+    prompt: str
+    negative_prompt: str | None
+    reference_url: str
+    params: dict[str, object] | None
+
+
+def _row(jewelry_type: JewelryType, service: ServiceType) -> MatrixRow:
+    return MatrixRow(
+        prompt=(
+            f"A professional product photo of a {jewelry_type.value} styled for "
+            f"{service.value}, studio lighting, plain background."
+        ),
+        negative_prompt=None,
+        reference_url=f"https://drive.google.com/stub/{jewelry_type.value}/{service.value}",
+        params=None,
+    )
+
+
+# Worker-internal stub matrix (distinct from the API-facing StubMatrix fixture
+# above, which never carries prompt text). A small hardcoded set of combos —
+# any combo not listed here is a MATRIX_MISS (R9).
+_STUB_ROWS: dict[tuple[JewelryType, ServiceType], MatrixRow] = {
+    (JewelryType.RING, ServiceType.FEMALE_MODEL_TRADITIONAL): _row(
+        JewelryType.RING, ServiceType.FEMALE_MODEL_TRADITIONAL
+    ),
+    (JewelryType.RING, ServiceType.FEMALE_MODEL_MODERN): _row(
+        JewelryType.RING, ServiceType.FEMALE_MODEL_MODERN
+    ),
+    (JewelryType.NECKLACE, ServiceType.PRODUCT_STYLING_TRADITIONAL): _row(
+        JewelryType.NECKLACE, ServiceType.PRODUCT_STYLING_TRADITIONAL
+    ),
+    (JewelryType.BRACELET, ServiceType.MALE_MODEL_MODERN): _row(
+        JewelryType.BRACELET, ServiceType.MALE_MODEL_MODERN
+    ),
+}
+
+
+async def resolve_matrix_row(jewelry_type: JewelryType, service: ServiceType) -> MatrixRow | None:
+    """Worker-internal matrix lookup used by the resolve stage. Returns None on
+    a miss -> MATRIX_MISS (R9). Distinct from get_matrix_response(), which
+    backs the API-facing GET /matrix route and never carries prompt text."""
+    return _STUB_ROWS.get((jewelry_type, service))
+
+
+def current_matrix_version() -> str:
+    return _MATRIX_VERSION
 
 
 async def get_matrix_response() -> MatrixResponse:
