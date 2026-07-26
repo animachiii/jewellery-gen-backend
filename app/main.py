@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import structlog
+from arq.connections import RedisSettings, create_pool
 from fastapi import FastAPI, Request, Response
 from redis.asyncio import Redis
 
@@ -20,9 +21,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
     app.state.redis = redis
+    app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     try:
         yield
     finally:
+        await app.state.arq_pool.aclose()
         await redis.aclose()
 
 

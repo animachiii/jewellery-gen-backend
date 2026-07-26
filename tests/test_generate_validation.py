@@ -65,8 +65,9 @@ class _AbortingUploadFile:
 
 async def test_valid_512x512_png_passes_validation() -> None:
     data = _png_bytes(512, 512)
-    result = await read_and_validate_image(_FakeUploadFile(data))
+    result, mime = await read_and_validate_image(_FakeUploadFile(data))
     assert result == data
+    assert mime == "image/png"
 
 
 async def test_100x100_png_raises_validation_error_422() -> None:
