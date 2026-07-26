@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Response
 from redis.asyncio import Redis
 
 from app.api.errors import register_error_handlers
+from app.api.v1 import router as v1_router
 from app.config import settings
 from app.core.logging import configure_logging, get_logger
 
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Jewellery Generation Backend", lifespan=lifespan)
 register_error_handlers(app)
+app.include_router(v1_router)
 
 
 @app.middleware("http")

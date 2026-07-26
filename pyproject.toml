@@ -16,6 +16,7 @@ dependencies = [
     "google-auth==2.37.0",
     "google-genai==0.3.0",
     "pillow==11.1.0",
+    "python-multipart==0.0.20",
 ]
 
 [project.optional-dependencies]

@@ -87,6 +87,56 @@ class JobNotResolvableError(AppError):
         )
 
 
+class UnsupportedFormatError(AppError):
+    """415 — either the request Content-Type isn't multipart/form-data, or the
+    uploaded image's magic bytes don't identify as JPEG/PNG/WebP (R18)."""
+
+    def __init__(self, message: str = "Unsupported format.") -> None:
+        super().__init__(
+            code=ErrorCode.UNSUPPORTED_FORMAT.value,
+            http_status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            message=message,
+        )
+
+
+class ImageTooLargeError(AppError):
+    def __init__(self, message: str = "Image exceeds the maximum allowed size.") -> None:
+        super().__init__(
+            code=ErrorCode.IMAGE_TOO_LARGE.value,
+            http_status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            message=message,
+        )
+
+
+class InvalidImageError(AppError):
+    """400 — Pillow identifies the format but the pixel data itself is corrupt
+    (fails `.load()`/`.verify()`). Distinct from UnsupportedFormatError (415),
+    which is for bytes that never identify as JPEG/PNG/WebP at all — see
+    Checkpoint 2's ".jpg-named PDF" case, which is 415 because the bytes never
+    identify as an image format in the first place."""
+
+    def __init__(self, message: str = "Image file is corrupt or unreadable.") -> None:
+        super().__init__(
+            code=ErrorCode.INVALID_IMAGE.value,
+            http_status=status.HTTP_400_BAD_REQUEST,
+            message=message,
+        )
+
+
+class ValidationAppError(AppError):
+    """Generic 422 for request-validation failures raised directly from route
+    code (as opposed to FastAPI's own RequestValidationError path) — e.g. an
+    image below the minimum 256x256 dimension, an unknown `service`/
+    `jewelry_type` string, or a v2-only service requested in v1."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="VALIDATION_ERROR",
+            http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            message=message,
+        )
+
+
 class DomainError(AppError):
     """Generic constructor for business/domain ErrorCode values (docs/schema.md
     §1) that don't yet have a dedicated subclass."""
