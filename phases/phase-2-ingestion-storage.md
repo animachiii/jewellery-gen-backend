@@ -83,7 +83,27 @@ Before declaring this phase complete:
 6. Only say "Phase 2 Complete" when every checkpoint is green, docs are in sync, and the manual-verification note is filled in (or explicitly still pending, clearly flagged as the one item this sandboxed session could not close).
 
 ## Manual Verification (fill in after a real run against live Drive)
-- [ ] Upload smoke test: **PENDING** — requires network access this session does not have. Run after deploy/in a networked dev environment: instantiate `DriveStorage()` (with `STORAGE_BACKEND=drive` and real `.env` credentials), `put()` a small test payload, confirm it appears in the Drive folder, `get()` it back, byte-compare, delete the test file.
+- [x] Upload smoke test: **RUN, FAILED — not a code defect.** `scripts/smoke_test_drive.py` was run by the project owner against real credentials. Sequence of real failures encountered and fixed up to a point:
+  1. Drive API disabled on the GCP project → enabled it.
+  2. `GDRIVE_FOLDER_ID` was still the `.env.example` placeholder → corrected to a real Drive folder ID.
+  3. **Hard blocker, unresolvable within this setup**: `storageQuotaExceeded` — "Service Accounts do not have storage quota." Google does not allow a bare service account to own file storage in a personal (non-Workspace) Google Drive; Shared Drives (the standard workaround) require Google Workspace, which this project does not have.
+  - **Decision**: switched the active storage backend to **Supabase Storage** instead (see Addendum below). `DriveStorage` is left in place, fully built and tested against `FakeDriveClient`, in case a future Google Workspace account makes Drive viable — but it is not the adapter actually used.
+
+## Addendum — Switched to Supabase Storage (post-Phase-2-completion)
+
+After this phase was marked complete, the manual Drive verification above hit the service-account storage-quota wall. Rather than requiring the client to acquire Google Workspace, the project owner chose to switch the active `StorageAdapter` to **Supabase Storage** — proving out the adapter design's core promise (`docs/conventions.md` → Adapters: swapping a provider is "one file and one factory line — nothing else").
+
+What was added, mirroring `DriveStorage`'s structure exactly:
+- `app/storage/supabase.py` — `SupabaseStorageClient` Protocol, `HttpxSupabaseStorageClient` (real, via `httpx.AsyncClient` directly against Supabase's Storage REST API — no `asyncio.to_thread` needed since httpx is natively async, unlike the sync Google SDKs), `SupabaseStorage` (implements `StorageAdapter`; a generated uuid4 hex is the opaque `storage_ref`; mime stored as the object's native Content-Type, read back on download — same pattern as Drive's `mimeType`). Retryable (429/5xx) vs. terminal (400/401/403/404) failure classification mirrors `DriveStorage`'s 403/5xx-vs-4xx split.
+- `tests/fakes/fake_supabase_client.py` — `FakeSupabaseStorageClient`, same shape as `FakeDriveClient`.
+- `tests/test_storage_supabase.py` — full parity with `tests/test_storage_drive.py`'s checkpoint coverage (round-trip, opaque ref, exists without side effects, retry-then-raise on transient failures, no-retry on definite 404, protocol satisfaction, source/asset parity).
+- `app/storage/factory.py` — added a `storage_backend == "supabase"` branch; `app/config.py` added `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` (all required together only when `STORAGE_BACKEND=supabase`, enforced by a model validator mirroring the existing `HIGGSFIELD_API_KEY`-outside-local pattern).
+- `scripts/smoke_test_supabase.py` — mirrors `scripts/smoke_test_drive.py` for manual live verification.
+- `docs/schema.md` §6 and `.env.example` updated with the three new vars.
+
+**No route, schema, business-rule, or `StorageAdapter` protocol change was needed** — confirming the adapter seam worked exactly as designed even under an unplanned, mid-project backend swap.
+
+**Outstanding**: the live Supabase smoke test (`scripts/smoke_test_supabase.py`) still needs to be run by the project owner against their real Supabase project before `STORAGE_BACKEND=supabase` is trusted in production — this sandbox has no network access to do it.
 
 ## Final Phase 2 Checklist
 - [x] `DriveStorage` implements `StorageAdapter` with no protocol change

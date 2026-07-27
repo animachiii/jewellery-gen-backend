@@ -15,7 +15,7 @@ This is v1: a decoupled replacement for an existing n8n/Telegram prototype. The 
 
 ## Tech Stack
 
-Python 3.12 + FastAPI · ARQ + Redis (queue) · Google Sheets (durable job log + prompt matrix) + Redis (live job state) · Google Drive via storage adapter · Gemini 2.5 Flash (classification) · Higgsfield (generation, abstracted) · API-key auth · Docker Compose → Railway/Render
+Python 3.12 + FastAPI · ARQ + Redis (queue) · Google Sheets (durable job log + prompt matrix) + Redis (live job state) · Supabase Storage via storage adapter · Gemini 2.5 Flash (classification) · Higgsfield (generation, abstracted) · API-key auth · Docker Compose → Railway/Render
 
 ## Folder Structure
 
@@ -55,7 +55,9 @@ jewellery-gen-backend/
 │   │   └── higgsfield.py       # real provider
 │   ├── storage/
 │   │   ├── base.py             # StorageAdapter protocol
-│   │   ├── drive.py            # Google Drive
+│   │   ├── factory.py          # STORAGE_BACKEND selector
+│   │   ├── supabase.py         # Supabase Storage — active backend (source images + generated assets)
+│   │   ├── drive.py            # Google Drive — built, unused (service accounts have no quota on personal Drive)
 │   │   └── local.py            # local filesystem, tests only
 │   └── worker/
 │       ├── settings.py         # ARQ WorkerSettings, cron registration
@@ -80,7 +82,7 @@ jewellery-gen-backend/
 - **Staged, resumable pipeline.** Each stage commits state before the next begins. No stage boundary lives in worker memory.
 - **Paid operations never auto-retry.** The provider submit stage is `max_tries=1`. Free stages (poll, download) retry aggressively. This is the system's most expensive class of bug.
 - **Prompts are snapshotted onto the job.** The resolved prompt text and reference URL are copied to the job record at resolve time. The client edits the sheet freely; historical outputs stay explainable.
-- **Storage is behind an adapter and assets are served by the API.** No Drive URL ever appears in a response. Jobs store an opaque `storage_ref`. Swapping Drive → R2 later is an adapter change with zero contract impact.
+- **Storage is behind an adapter and assets are served by the API.** No raw storage URL ever appears in a response. Jobs store an opaque `storage_ref`. Phase 2 built `DriveStorage` first, then discovered service accounts have zero storage quota on a personal (non-Workspace) Google Drive — an unworkable blocker for this client's account. Switched to Supabase Storage instead; the adapter seam meant this was a one-file swap (`app/storage/supabase.py` + one factory branch) with zero contract impact, exactly as designed. `DriveStorage` is left in the codebase, built and tested, in case a future Workspace account makes Drive viable again.
 - **Provider is behind an adapter.** `FakeProvider` is written alongside the real one, not after. It powers mock mode and the entire test suite.
 - **Low classifier confidence is a job state, not a failure.** Below threshold, the job parks in `needs_input` with candidate types rather than generating the wrong thing.
 - **Sheets is v1 only.** Migrate to Supabase when sustained throughput exceeds ~30 jobs/min or the client needs real queries over history.

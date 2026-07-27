@@ -75,7 +75,7 @@ Conditions that should reopen a locked decision rather than being worked around:
 
 - **Sustained throughput > ~30 jobs/min**, or the client wants queries over job history → migrate D1 from Sheets to Supabase.
 - **Client polls more than ~10 concurrent jobs** → the 60/min rate limit (R20) will trip; raise it or add a batch-status route.
-- **Google Drive quota or sharing friction in practice** → swap the storage adapter to R2/Supabase Storage. D7 makes this invisible to clients.
+- ~~**Google Drive quota or sharing friction in practice** → swap the storage adapter to R2/Supabase Storage. D7 makes this invisible to clients.~~ **Fired and resolved.** Service accounts have zero storage quota on a personal (non-Workspace) Drive — confirmed via a real smoke test. Switched to Supabase Storage; see `phases/phase-2-ingestion-storage.md` → Addendum. `DriveStorage` remains built/tested but unused.
 - **Higgsfield has no idempotency key or metadata lookup** → orphaned submits can only be resolved manually. Document it prominently in the runbook and consider a stricter submit timeout.
 - **Classifier accuracy below ~90% on the Phase 6 benchmark** → raise the confidence threshold (more `needs_input`, fewer wrong generations) before considering a different model.
 - **Bandwidth/server-load from streaming Drive assets through the API becomes a real problem** → Phase 2 deliberately deferred signed-URL/302-redirect delivery for `GET /jobs/{id}/assets/{index}` in favor of always streaming bytes server-side (simpler, and D7 already guarantees no raw Drive URL is ever exposed either way). Revisit only if this bandwidth/latency tradeoff actually bites in practice — see `phases/phase-2-ingestion-storage.md` Step 3.

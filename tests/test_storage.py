@@ -7,7 +7,9 @@ from app.storage.base import StorageAdapter
 from app.storage.drive import DriveStorage
 from app.storage.factory import get_storage_adapter
 from app.storage.local import LocalStorage, StorageRefNotFoundError
+from app.storage.supabase import SupabaseStorage
 from tests.fakes.fake_drive_client import FakeDriveClient
+from tests.fakes.fake_supabase_client import FakeSupabaseStorageClient
 
 
 @pytest.fixture
@@ -65,3 +67,20 @@ def test_get_storage_adapter_returns_drive_storage_when_configured(
     adapter = get_storage_adapter()
 
     assert isinstance(adapter, DriveStorage)
+
+
+def test_get_storage_adapter_returns_supabase_storage_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "storage_backend", "supabase")
+    monkeypatch.setattr(settings, "supabase_url", "https://example.supabase.co")
+    monkeypatch.setattr(settings, "supabase_service_role_key", "fake-key")
+    monkeypatch.setattr(settings, "supabase_storage_bucket", "test-bucket")
+    monkeypatch.setattr(
+        "app.storage.supabase.HttpxSupabaseStorageClient",
+        lambda base_url, service_role_key: FakeSupabaseStorageClient(),
+    )
+
+    adapter = get_storage_adapter()
+
+    assert isinstance(adapter, SupabaseStorage)

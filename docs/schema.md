@@ -255,7 +255,10 @@ Every job read/write verifies `api_key_name` matches the caller. A valid key for
 | `GOOGLE_SHEET_ID` | yes | — | Spreadsheet holding both tabs |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | yes | — | Base64 of the service account key |
 | `GDRIVE_FOLDER_ID` | yes | — | Destination folder |
-| `STORAGE_BACKEND` | no | `local` | `local` \| `drive`. Phase 2 adapter selector |
+| `STORAGE_BACKEND` | no | `local` | `local` \| `drive` \| `supabase`. Phase 2 adapter selector |
+| `SUPABASE_URL` | required if `STORAGE_BACKEND=supabase` | — | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | required if `STORAGE_BACKEND=supabase` | — | Service role key (bypasses RLS on the storage bucket) |
+| `SUPABASE_STORAGE_BUCKET` | required if `STORAGE_BACKEND=supabase` | — | Private bucket name for source images and generated assets |
 | `GEMINI_API_KEY` | yes | — | |
 | `GEMINI_MODEL` | no | `gemini-2.5-flash` | |
 | `CLASSIFIER_CONFIDENCE_THRESHOLD` | no | `0.75` | Below → `needs_input` |

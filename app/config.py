@@ -64,7 +64,15 @@ class Settings(BaseSettings):
     provider: Literal["higgsfield", "fake"] = Field(default="higgsfield", alias="PROVIDER")
 
     local_storage_dir: str = Field(default="./data/storage", alias="LOCAL_STORAGE_DIR")
-    storage_backend: Literal["local", "drive"] = Field(default="local", alias="STORAGE_BACKEND")
+    storage_backend: Literal["local", "drive", "supabase"] = Field(
+        default="local", alias="STORAGE_BACKEND"
+    )
+
+    supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
+    supabase_service_role_key: str | None = Field(
+        default=None, alias="SUPABASE_SERVICE_ROLE_KEY"
+    )
+    supabase_storage_bucket: str | None = Field(default=None, alias="SUPABASE_STORAGE_BUCKET")
 
     # Testing/dev-only knob for FakeProvider failure injection (not a deployment var).
     fake_fail_mode: Literal["submit", "poll", "timeout", "none"] = Field(
@@ -105,6 +113,17 @@ class Settings(BaseSettings):
     def _require_higgsfield_key_outside_local(self) -> "Settings":
         if self.env != "local" and self.provider == "higgsfield" and not self.higgsfield_api_key:
             raise ValueError("HIGGSFIELD_API_KEY is required when ENV != local")
+        return self
+
+    @model_validator(mode="after")
+    def _require_supabase_config_when_selected(self) -> "Settings":
+        if self.storage_backend == "supabase" and not (
+            self.supabase_url and self.supabase_service_role_key and self.supabase_storage_bucket
+        ):
+            raise ValueError(
+                "SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET are "
+                "all required when STORAGE_BACKEND=supabase"
+            )
         return self
 
     def __repr__(self) -> str:
