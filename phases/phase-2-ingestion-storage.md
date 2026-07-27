@@ -103,7 +103,7 @@ What was added, mirroring `DriveStorage`'s structure exactly:
 
 **No route, schema, business-rule, or `StorageAdapter` protocol change was needed** — confirming the adapter seam worked exactly as designed even under an unplanned, mid-project backend swap.
 
-**Outstanding**: the live Supabase smoke test (`scripts/smoke_test_supabase.py`) still needs to be run by the project owner against their real Supabase project before `STORAGE_BACKEND=supabase` is trusted in production — this sandbox has no network access to do it.
+**Live Supabase smoke test: PASSED.** Run by the project owner via `scripts/smoke_test_supabase.py` against their real Supabase project — upload, download, byte-compare, and `exists()` all succeeded in ~1s. `STORAGE_BACKEND=supabase` is now verified against the real API and considered production-ready.
 
 ## Final Phase 2 Checklist
 - [x] `DriveStorage` implements `StorageAdapter` with no protocol change
