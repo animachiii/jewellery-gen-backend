@@ -2,8 +2,12 @@ import os
 
 import pytest
 
+from app.config import settings
 from app.storage.base import StorageAdapter
-from app.storage.local import LocalStorage, StorageRefNotFoundError, get_storage_adapter
+from app.storage.drive import DriveStorage
+from app.storage.factory import get_storage_adapter
+from app.storage.local import LocalStorage, StorageRefNotFoundError
+from tests.fakes.fake_drive_client import FakeDriveClient
 
 
 @pytest.fixture
@@ -50,3 +54,14 @@ async def test_get_storage_adapter_returns_local_storage() -> None:
 def test_local_storage_satisfies_storage_adapter_protocol() -> None:
     adapter: StorageAdapter = LocalStorage()
     assert adapter is not None
+
+
+def test_get_storage_adapter_returns_drive_storage_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "storage_backend", "drive")
+    monkeypatch.setattr("app.storage.drive.GoogleDriveClient", lambda info: FakeDriveClient())
+
+    adapter = get_storage_adapter()
+
+    assert isinstance(adapter, DriveStorage)

@@ -37,7 +37,8 @@ from app.models.schemas import (
     ResolveRequest,
 )
 from app.storage.base import StorageAdapter
-from app.storage.local import StorageRefNotFoundError, get_storage_adapter
+from app.storage.factory import get_storage_adapter
+from app.storage.local import StorageRefNotFoundError
 from app.store.redis_store import list_recent, update_job
 
 router = APIRouter()

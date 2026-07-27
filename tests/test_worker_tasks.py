@@ -12,7 +12,7 @@ from app.models.job import Job
 from app.providers.fake import FakeProvider
 from app.services.classifier import ClassificationResult, Prediction
 from app.services.matrix import resolve_matrix_row
-from app.storage.local import get_storage_adapter
+from app.storage.factory import get_storage_adapter
 from app.store import redis_store
 from app.worker import tasks
 from tests.fakes.fake_sheets_client import FakeSheetsClient

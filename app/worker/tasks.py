@@ -47,7 +47,7 @@ from app.providers.factory import get_provider
 from app.services.classifier import StubClassifier
 from app.services.dedupe import record_dedupe
 from app.services.matrix import current_matrix_version, resolve_matrix_row
-from app.storage.local import get_storage_adapter
+from app.storage.factory import get_storage_adapter
 from app.store import redis_store
 from app.store.sheets_store import SheetsClient, safe_update_job_row
 from app.worker.retry import DEFAULT_DELAYS, retry_free

@@ -37,7 +37,7 @@ from app.models.job import Job, _iso
 from app.models.schemas import GenerateResponse
 from app.services import dedupe
 from app.services.budget import check_budget, increment_spend
-from app.storage.local import get_storage_adapter
+from app.storage.factory import get_storage_adapter
 from app.store.redis_store import create_job, get_job, set_row_index
 from app.store.sheets_store import GoogleSheetsClient, SheetsClient, safe_append_job_row
 

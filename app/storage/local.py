@@ -65,10 +65,3 @@ class LocalStorage:
             return os.path.isfile(self._data_path(ref)) and os.path.isfile(self._mime_path(ref))
 
         return await asyncio.to_thread(_check)
-
-
-def get_storage_adapter() -> "LocalStorage":
-    # Phase 1 only builds LocalStorage. Phase 2 will branch on a new setting
-    # (e.g. STORAGE_BACKEND) to add Drive; not adding that env var now since
-    # it isn't in docs/schema.md yet and there is nothing to branch to.
-    return LocalStorage()

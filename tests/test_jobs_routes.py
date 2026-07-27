@@ -9,7 +9,7 @@ from redis.asyncio import Redis
 from app.main import app
 from app.models.enums import ErrorCode, JobStatus, ServiceType, TypeSource
 from app.models.job import Job
-from app.storage.local import get_storage_adapter
+from app.storage.factory import get_storage_adapter
 from app.store.redis_store import create_job, get_job
 
 CLIENT_KEY = "secret123"  # matches .env API_KEYS=erp:secret123

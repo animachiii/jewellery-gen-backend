@@ -255,6 +255,7 @@ Every job read/write verifies `api_key_name` matches the caller. A valid key for
 | `GOOGLE_SHEET_ID` | yes | — | Spreadsheet holding both tabs |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | yes | — | Base64 of the service account key |
 | `GDRIVE_FOLDER_ID` | yes | — | Destination folder |
+| `STORAGE_BACKEND` | no | `local` | `local` \| `drive`. Phase 2 adapter selector |
 | `GEMINI_API_KEY` | yes | — | |
 | `GEMINI_MODEL` | no | `gemini-2.5-flash` | |
 | `CLASSIFIER_CONFIDENCE_THRESHOLD` | no | `0.75` | Below → `needs_input` |

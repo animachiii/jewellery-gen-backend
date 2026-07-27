@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     provider: Literal["higgsfield", "fake"] = Field(default="higgsfield", alias="PROVIDER")
 
     local_storage_dir: str = Field(default="./data/storage", alias="LOCAL_STORAGE_DIR")
+    storage_backend: Literal["local", "drive"] = Field(default="local", alias="STORAGE_BACKEND")
 
     # Testing/dev-only knob for FakeProvider failure injection (not a deployment var).
     fake_fail_mode: Literal["submit", "poll", "timeout", "none"] = Field(
