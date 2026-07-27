@@ -3,10 +3,13 @@ import io
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
+from pytest import MonkeyPatch
 from redis.asyncio import Redis
 
+from app.api.v1 import generate as generate_route
 from app.config import settings
 from app.main import app
+from tests.fakes.fake_sheets_client import FakeSheetsClient
 
 CLIENT_KEY = "secret123"  # matches .env API_KEYS=erp:secret123
 
@@ -24,13 +27,18 @@ def _png_bytes(width: int, height: int) -> bytes:
 
 
 @pytest_asyncio.fixture
-async def client(redis: Redis) -> AsyncClient:  # noqa: ARG001 - flushes DB 15
+async def client(redis: Redis, monkeypatch: MonkeyPatch) -> AsyncClient:  # noqa: ARG001 - flushes DB 15
     app.state.redis = redis
     # This route's own tests must not depend on whatever left `app.state`
     # (a process-wide singleton) in whatever state a previous test module
     # ran in — always set a working arq_pool explicitly, matching every
     # other test module that exercises /api/v1/generate.
     app.state.arq_pool = FakeArqPool()
+    # docs/conventions.md -> Testing: no test may call a real external
+    # service. Without this, a valid-image test reaching the real submit
+    # path would construct a real GoogleSheetsClient and make a live,
+    # credentialed Sheets API call.
+    monkeypatch.setattr(generate_route, "_build_sheets_client", lambda: FakeSheetsClient())
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     return AsyncClient(transport=transport, base_url="http://test")
 

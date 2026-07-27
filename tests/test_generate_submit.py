@@ -14,12 +14,14 @@ from PIL import Image
 from pytest import MonkeyPatch
 from redis.asyncio import Redis
 
+from app.api.v1 import generate as generate_route
 from app.config import settings
 from app.main import app
 from app.models.enums import ErrorCode, JobStatus, ServiceType
 from app.models.job import Job
 from app.services import dedupe
 from app.store.redis_store import create_job, get_job
+from tests.fakes.fake_sheets_client import FakeSheetsClient
 
 CLIENT_KEY = "secret123"  # matches .env API_KEYS=erp:secret123
 
@@ -45,9 +47,18 @@ async def arq_pool() -> FakeArqPool:
 
 
 @pytest_asyncio.fixture
-async def client(redis: Redis, arq_pool: FakeArqPool) -> AsyncClient:
+async def client(
+    redis: Redis, arq_pool: FakeArqPool, monkeypatch: MonkeyPatch
+) -> AsyncClient:
     app.state.redis = redis
     app.state.arq_pool = arq_pool
+    # docs/conventions.md -> Testing: no test may call a real external
+    # service. Without this, the route's real _build_sheets_client() would
+    # construct a real GoogleSheetsClient and attempt a live Sheets API call
+    # on every submit (caught by safe_append_job_row's try/except per R14, so
+    # it doesn't fail the test — but it's a live, credentialed network call
+    # on every test run, and a real write once the JobLog tab exists).
+    monkeypatch.setattr(generate_route, "_build_sheets_client", lambda: FakeSheetsClient())
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     return AsyncClient(transport=transport, base_url="http://test")
 
