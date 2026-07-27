@@ -28,7 +28,7 @@ Update the **Status** column manually as you go. Check this file before asking f
 | **0a** | Foundation & Scaffolding | Repo, tooling, CI, config, Docker Compose with AOF Redis, structured logging, domain enums, and validation of the client's real prompt matrix. | Sequential — first | Complete |
 | **0b** | State Layer | Job model, state machine, Redis store, Sheets write-behind log, dedupe/idempotency, boot rehydration, stuck-job sweeper cron. No routes. | Sequential after 0a | Complete |
 | **1** | API Contract & Mock Pipeline | All routes, auth, multipart validation, error envelope, storage/provider adapter seams, `FakeProvider`, and an end-to-end mock job through the real state machine. **Contract frozen.** | Sequential after 0b | Complete |
-| **2** | Ingestion & Storage | Real Google Drive adapter replacing `LocalStorage`; source-image retention; asset streaming/signed-URL delivery; Drive quota and error handling. | After 1. **Parallel with 3** | Not started |
+| **2** | Ingestion & Storage | Real Google Drive adapter replacing `LocalStorage`; source-image retention; asset streaming/signed-URL delivery; Drive quota and error handling. | After 1. **Parallel with 3** | Complete |
 | **3** | Classification & Matrix | Real Gemini 2.5 Flash classifier with structured output and the confidence/`needs_input` branch; real Sheets matrix reader with Redis TTL cache, version hashing, and admin refresh. Replaces both Phase 1 stubs. | After 1. **Parallel with 2** | Not started |
 | **4** | Provider Integration | Real Higgsfield adapter: submit with `submission_token`, poll, asset fetch, timeout and error mapping. The `max_tries=1` submit-safety contract from Phase 1 must hold against the real API. | Sequential after 2 **and** 3 | Not started |
 | **5** | Showcase UI | Single-file `ui/index.html`: upload → job_id → poll → render, with visible status and error readout. Built against `mock=true` so iteration costs nothing. | After 1; realistically after 4. **Parallel with 6/7/8** | Not started |
@@ -78,6 +78,7 @@ Conditions that should reopen a locked decision rather than being worked around:
 - **Google Drive quota or sharing friction in practice** → swap the storage adapter to R2/Supabase Storage. D7 makes this invisible to clients.
 - **Higgsfield has no idempotency key or metadata lookup** → orphaned submits can only be resolved manually. Document it prominently in the runbook and consider a stricter submit timeout.
 - **Classifier accuracy below ~90% on the Phase 6 benchmark** → raise the confidence threshold (more `needs_input`, fewer wrong generations) before considering a different model.
+- **Bandwidth/server-load from streaming Drive assets through the API becomes a real problem** → Phase 2 deliberately deferred signed-URL/302-redirect delivery for `GET /jobs/{id}/assets/{index}` in favor of always streaming bytes server-side (simpler, and D7 already guarantees no raw Drive URL is ever exposed either way). Revisit only if this bandwidth/latency tradeoff actually bites in practice — see `phases/phase-2-ingestion-storage.md` Step 3.
 
 ---
 

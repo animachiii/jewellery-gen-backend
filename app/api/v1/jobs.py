@@ -37,6 +37,7 @@ from app.models.schemas import (
     ResolveRequest,
 )
 from app.storage.base import StorageAdapter
+from app.storage.drive import DriveStorageError
 from app.storage.factory import get_storage_adapter
 from app.storage.local import StorageRefNotFoundError
 from app.store.redis_store import list_recent, update_job
@@ -132,7 +133,7 @@ async def get_job_asset_route(
     storage: StorageAdapter = get_storage_adapter()
     try:
         data, mime = await storage.get(job.asset_refs[index])
-    except StorageRefNotFoundError as exc:
+    except (StorageRefNotFoundError, DriveStorageError) as exc:
         raise StorageError("Stored asset could not be retrieved.") from exc
 
     return Response(

@@ -33,12 +33,12 @@ Per `docs/conventions.md` → Testing, build `FakeDriveClient` implementing the 
 `app/storage/local.py`'s `get_storage_adapter()` currently unconditionally returns `LocalStorage`, with a comment: "Phase 2 will branch on a new setting (e.g. STORAGE_BACKEND) to add Drive." Add that setting now: `storage_backend: Literal["local", "drive"] = Field(default="local", alias="STORAGE_BACKEND")` in `app/config.py` (add to `.env.example` too, and — since this changes `docs/schema.md` §6's env var table — add the row there in your docs-update pass at the end). Default stays `"local"` so nothing in Phase 1's existing test suite or any not-yet-Drive-configured environment breaks by default; production `.env` should set `STORAGE_BACKEND=drive` once this phase is verified live. Move the factory (or keep it in `app/storage/local.py`, or relocate to a neutral `app/storage/__init__.py` / new `app/storage/factory.py` matching `app/providers/factory.py`'s existing precedent — prefer the latter for symmetry) to branch on this setting.
 
 ### Checkpoint 1
-- [ ] `DriveStorage.put` → `get` round-trips bytes and mime through `FakeDriveClient`
-- [ ] `storage_ref` returned by `put()` contains no path separators and no filename (same assertion style as Phase 1's `LocalStorage` test)
-- [ ] `exists()` returns `True`/`False` correctly without triggering a full download (assert `FakeDriveClient`'s call-count/method used, not just the boolean result)
-- [ ] A simulated quota/5xx failure retries the configured number of times then raises a typed error mapping to `STORAGE_ERROR`; a simulated definite-404 does NOT retry
-- [ ] `get_storage_adapter()` returns `LocalStorage` when `STORAGE_BACKEND=local` (default) and `DriveStorage` when `STORAGE_BACKEND=drive`, with no other code change required (mirrors Phase 1 Checkpoint 5's provider-factory test pattern)
-- [ ] `grep -rn "googleapiclient\|drive" app/ --include="*.py"` (excluding `app/store/sheets_store.py`'s pre-existing Sheets-API use of the same client library) matches only inside `app/storage/`
+- [x] `DriveStorage.put` → `get` round-trips bytes and mime through `FakeDriveClient`
+- [x] `storage_ref` returned by `put()` contains no path separators and no filename (same assertion style as Phase 1's `LocalStorage` test)
+- [x] `exists()` returns `True`/`False` correctly without triggering a full download (assert `FakeDriveClient`'s call-count/method used, not just the boolean result)
+- [x] A simulated quota/5xx failure retries the configured number of times then raises a typed error mapping to `STORAGE_ERROR`; a simulated definite-404 does NOT retry
+- [x] `get_storage_adapter()` returns `LocalStorage` when `STORAGE_BACKEND=local` (default) and `DriveStorage` when `STORAGE_BACKEND=drive`, with no other code change required (mirrors Phase 1 Checkpoint 5's provider-factory test pattern)
+- [x] `grep -rn "googleapiclient\|drive" app/ --include="*.py"` (excluding `app/store/sheets_store.py`'s pre-existing Sheets-API use of the same client library) matches only inside `app/storage/`
 
 ---
 
@@ -51,8 +51,8 @@ Currently (Phase 1), the uploaded source image is written via `get_storage_adapt
 - Confirm `source_bytes`/`source_mime` on the `Job` record (already populated at Phase 1 submit time) remain accurate and untouched by this phase — no schema change needed here.
 
 ### Checkpoint 2
-- [ ] A submitted job's source image round-trips through `DriveStorage` exactly like a generated asset does (same adapter, same guarantees) — one test proving `source_ref` set at submit resolves via `get_storage_adapter().get()` after switching `STORAGE_BACKEND=drive`
-- [ ] No new required env var was introduced without a concrete retention-policy reason (self-check against `docs/business-rules.md` §6)
+- [x] A submitted job's source image round-trips through `DriveStorage` exactly like a generated asset does (same adapter, same guarantees) — one test proving `source_ref` set at submit resolves via `get_storage_adapter().get()` after switching `STORAGE_BACKEND=drive`
+- [x] No new required env var was introduced without a concrete retention-policy reason (self-check against `docs/business-rules.md` §6)
 
 ---
 
@@ -66,9 +66,9 @@ Currently (Phase 1), the uploaded source image is written via `get_storage_adapt
 - Do add one thing routes currently lack: **Drive-specific failure mapping**. If `DriveStorage.get()` raises the quota/retry-exhausted error from Step 1, the assets route must map it to `502 STORAGE_ERROR` (the `StorageError` `AppError` already exists from Phase 1 — confirm the route's existing `except` clause around `storage.get()` actually catches your new Drive-specific exception type, not just `LocalStorage`'s `StorageRefNotFoundError`; widen/adjust the except clause if needed).
 
 ### Checkpoint 3
-- [ ] `GET /assets/{index}` against a `succeeded` job with `STORAGE_BACKEND=drive` streams bytes correctly through `FakeDriveClient` with the right `Content-Type` and `Cache-Control`
-- [ ] A simulated Drive quota/retry-exhaustion failure on `get()` surfaces as `502 STORAGE_ERROR` through the route, not a raw 500
-- [ ] The decision to default to streaming (not signed-URL redirect) is recorded in this file's audit notes and, if warranted, added to `phases/phase-roadmap.md` → Revisit Triggers
+- [x] `GET /assets/{index}` against a `succeeded` job with `STORAGE_BACKEND=drive` streams bytes correctly through `FakeDriveClient` with the right `Content-Type` and `Cache-Control`
+- [x] A simulated Drive quota/retry-exhaustion failure on `get()` surfaces as `502 STORAGE_ERROR` through the route, not a raw 500
+- [x] The decision to default to streaming (not signed-URL redirect) is recorded in this file's audit notes and, if warranted, added to `phases/phase-roadmap.md` → Revisit Triggers
 
 ---
 
@@ -86,13 +86,13 @@ Before declaring this phase complete:
 - [ ] Upload smoke test: **PENDING** — requires network access this session does not have. Run after deploy/in a networked dev environment: instantiate `DriveStorage()` (with `STORAGE_BACKEND=drive` and real `.env` credentials), `put()` a small test payload, confirm it appears in the Drive folder, `get()` it back, byte-compare, delete the test file.
 
 ## Final Phase 2 Checklist
-- [ ] `DriveStorage` implements `StorageAdapter` with no protocol change
-- [ ] `FakeDriveClient` exists and is the only thing any test touches
-- [ ] Quota/error handling: retryable vs. terminal Drive failures distinguished, terminal failures map to `STORAGE_ERROR`
-- [ ] `STORAGE_BACKEND` setting added, defaults to `local`, documented in `docs/schema.md` §6 and `.env.example`
-- [ ] Source images and generated assets both round-trip through `DriveStorage` identically
-- [ ] Asset delivery route requires no changes beyond exception-mapping (streaming-through-API decision documented)
-- [ ] Boundary enforced: Drive imports confined to `app/storage/`
-- [ ] Full existing Phase 0–1 test suite still green (no regressions)
-- [ ] `docs/` and roadmap updated to match reality
-- [ ] Self-audit passed; manual live-Drive verification explicitly flagged as pending or completed
+- [x] `DriveStorage` implements `StorageAdapter` with no protocol change
+- [x] `FakeDriveClient` exists and is the only thing any test touches
+- [x] Quota/error handling: retryable vs. terminal Drive failures distinguished, terminal failures map to `STORAGE_ERROR`
+- [x] `STORAGE_BACKEND` setting added, defaults to `local`, documented in `docs/schema.md` §6 and `.env.example`
+- [x] Source images and generated assets both round-trip through `DriveStorage` identically
+- [x] Asset delivery route requires no changes beyond exception-mapping (streaming-through-API decision documented)
+- [x] Boundary enforced: Drive imports confined to `app/storage/`
+- [x] Full existing Phase 0–1 test suite still green (no regressions)
+- [x] `docs/` and roadmap updated to match reality
+- [x] Self-audit passed; manual live-Drive verification explicitly flagged as pending or completed

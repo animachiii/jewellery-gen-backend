@@ -101,3 +101,28 @@ async def test_drive_storage_satisfies_storage_adapter_protocol(
 ) -> None:
     adapter: StorageAdapter = DriveStorage(fake_client, folder_id="folder-123")
     assert adapter is not None
+
+
+async def test_source_image_and_generated_asset_round_trip_identically(
+    storage: DriveStorage,
+) -> None:
+    """Phase 2 Step 2, Checkpoint 2: a source image (filename convention used
+    by app/api/v1/generate.py: "{job_id}.{ext}") and a generated asset
+    (filename convention used by app/worker/tasks.py: "{job_id}_{i}") go
+    through the same DriveStorage adapter with the same guarantees — one
+    adapter, one set of guarantees, for both source and output."""
+    job_id = "job-retention-1"
+
+    source_ref = await storage.put(b"source-bytes", filename=f"{job_id}.png", mime="image/png")
+    asset_ref = await storage.put(b"asset-bytes", filename=f"{job_id}_0", mime="image/png")
+
+    source_data, source_mime = await storage.get(source_ref)
+    asset_data, asset_mime = await storage.get(asset_ref)
+
+    assert (source_data, source_mime) == (b"source-bytes", "image/png")
+    assert (asset_data, asset_mime) == (b"asset-bytes", "image/png")
+    # Refs are opaque and distinguishable from each other, but neither embeds
+    # a path separator or filename (R17 — same assertion style as Checkpoint 1).
+    assert source_ref != asset_ref
+    for ref in (source_ref, asset_ref):
+        assert "/" not in ref and "\\" not in ref

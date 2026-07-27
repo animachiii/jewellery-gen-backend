@@ -2,15 +2,23 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 
+import app.api.v1.jobs as jobs_module
 from app.main import app
 from app.models.enums import ErrorCode, JobStatus, ServiceType, TypeSource
 from app.models.job import Job
+from app.storage.drive import DriveStorage
 from app.storage.factory import get_storage_adapter
 from app.store.redis_store import create_job, get_job
+from tests.fakes.fake_drive_client import FakeDriveClient
+
+# Retry delays for Drive-backed tests must be fast — the real factory's
+# DEFAULT_DELAYS (2s/8s/30s) would make a retry-exhaustion test take ~40s.
+_FAST_DELAYS = (0.0, 0.0, 0.0)
 
 CLIENT_KEY = "secret123"  # matches .env API_KEYS=erp:secret123
 OTHER_KEY_NAME = "other-client"
@@ -318,6 +326,55 @@ async def test_fetch_asset_missing_storage_file_returns_502(
         job_id="job-broken-asset", status=JobStatus.SUCCEEDED, asset_refs=["nonexistent-ref"]
     )
     await create_job(redis, job)
+
+    async with client as ac:
+        resp = await ac.get(
+            f"/api/v1/jobs/{job.job_id}/assets/0", headers={"X-API-Key": CLIENT_KEY}
+        )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "STORAGE_ERROR"
+
+
+async def test_fetch_asset_streams_via_drive_backend(
+    client: AsyncClient, redis: Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Checkpoint 3: assets/{index} streams bytes identically when the backing
+    adapter is DriveStorage, with no route-level change — same Content-Type
+    and Cache-Control as the LocalStorage path."""
+    fake_drive = FakeDriveClient()
+    drive_storage = DriveStorage(fake_drive, folder_id="folder-123", retry_delays=_FAST_DELAYS)
+    monkeypatch.setattr(jobs_module, "get_storage_adapter", lambda: drive_storage)
+
+    ref = await drive_storage.put(b"\x89PNGdrivebytes", filename="job-drive_0", mime="image/png")
+    job = _make_job(job_id="job-drive-asset", status=JobStatus.SUCCEEDED, asset_refs=[ref])
+    await create_job(redis, job)
+
+    async with client as ac:
+        resp = await ac.get(
+            f"/api/v1/jobs/{job.job_id}/assets/0", headers={"X-API-Key": CLIENT_KEY}
+        )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.content == b"\x89PNGdrivebytes"
+    assert resp.headers["cache-control"] == "private, max-age=3600"
+
+
+async def test_fetch_asset_drive_quota_exhaustion_returns_502(
+    client: AsyncClient, redis: Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Checkpoint 3: a Drive quota/retry-exhaustion failure on get() surfaces
+    as 502 STORAGE_ERROR through the route, not an unhandled 500."""
+    fake_drive = FakeDriveClient()
+    drive_storage = DriveStorage(fake_drive, folder_id="folder-123", retry_delays=_FAST_DELAYS)
+    ref = await drive_storage.put(b"data", filename="job-drive-fail_0", mime="image/png")
+    job = _make_job(job_id="job-drive-fail", status=JobStatus.SUCCEEDED, asset_refs=[ref])
+    await create_job(redis, job)
+
+    # Every subsequent call raises a 403 quota error; retries exhaust and
+    # DriveStorage.get() raises DriveStorageError.
+    fake_drive.fail_mode = "quota"
+    fake_drive.fail_remaining = -1
+    monkeypatch.setattr(jobs_module, "get_storage_adapter", lambda: drive_storage)
 
     async with client as ac:
         resp = await ac.get(
