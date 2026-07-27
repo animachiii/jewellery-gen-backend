@@ -17,6 +17,7 @@ class FakeSheetsClient:
     fail_next: bool = False
     _next_row: int = 2  # row 1 is the header
     rows: list[list[str]] = field(default_factory=list)  # what read_all_rows returns
+    read_all_rows_calls: int = 0
 
     def append_row(self, sheet_id: str, tab: str, values: list[str]) -> str:
         if self.fail_next:
@@ -35,4 +36,5 @@ class FakeSheetsClient:
         self.calls.append(RecordedCall("update", range_, list(values)))
 
     def read_all_rows(self, sheet_id: str, tab: str) -> list[list[str]]:
+        self.read_all_rows_calls += 1
         return self.rows

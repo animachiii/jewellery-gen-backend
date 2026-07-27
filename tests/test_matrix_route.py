@@ -1,14 +1,28 @@
-"""Step 4 — GET /api/v1/matrix, backed by StubMatrix fixture data."""
+"""GET /api/v1/matrix, backed by a real (fake-client-sourced) Sheets read."""
 
 import json
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from pytest import MonkeyPatch
 from redis.asyncio import Redis
 
+import app.api.v1.matrix as matrix_route
 from app.main import app
+from tests.fakes.fake_sheets_client import FakeSheetsClient
 
 CLIENT_KEY = "secret123"  # matches .env API_KEYS=erp:secret123
+
+_HEADER = ["", "Anklets", "Necklace", "Earrings", "Bangles", "Bracelets", "Hipbelt", "Ring"]
+
+
+def _matrix_rows() -> list[list[str]]:
+    url = "https://drive.google.com/file/d/abc123/view"
+    return [
+        _HEADER,
+        ["Female Model"],
+        ["Traditional"] + [""] * 6 + [f"A ring prompt {url}"],
+    ]
 
 
 class FakeArqPool:
@@ -17,9 +31,15 @@ class FakeArqPool:
 
 
 @pytest_asyncio.fixture
-async def client(redis: Redis) -> AsyncClient:
+async def client(redis: Redis, monkeypatch: MonkeyPatch) -> AsyncClient:
     app.state.redis = redis
     app.state.arq_pool = FakeArqPool()
+    # No test may call a real external service (docs/conventions.md ->
+    # Testing) — stand in for the route's real GoogleSheetsClient
+    # construction with a FakeSheetsClient carrying a synthetic sheet.
+    monkeypatch.setattr(
+        matrix_route, "_build_sheets_client", lambda: FakeSheetsClient(rows=_matrix_rows())
+    )
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     return AsyncClient(transport=transport, base_url="http://test")
 

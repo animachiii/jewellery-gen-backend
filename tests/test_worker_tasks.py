@@ -19,6 +19,28 @@ from tests.fakes.fake_sheets_client import FakeSheetsClient
 
 SHEET_ID = "sheet-1"
 
+# Synthetic pivot-grid sheet (mirrors the client's real Sheet1 layout per
+# docs/schema.md §2 and tests/test_validate_matrix.py's fixture shape).
+# Covers RING x FEMALE_MODEL_TRADITIONAL (two stacked variants — the
+# pipeline's default combo) and RING x FEMALE_MODEL_MODERN (StubClassifier
+# always predicts RING). HIPBELT x MALE_MODEL_TRADITIONAL is deliberately
+# absent -> a genuine MATRIX_MISS.
+_MATRIX_HEADER = ["", "Anklets", "Necklace", "Earrings", "Bangles", "Bracelets", "Hipbelt", "Ring"]
+
+
+def _matrix_cell(text: str, url: str = "https://drive.google.com/file/d/abc123/view") -> str:
+    return f"{text} {url}"
+
+
+def _matrix_rows() -> list[list[str]]:
+    return [
+        _MATRIX_HEADER,
+        ["Female Model"],
+        ["Traditional"] + [""] * 6 + [_matrix_cell("Ring female traditional prompt one")],
+        [""] * 7 + [_matrix_cell("Ring female traditional prompt two")],
+        ["Modern"] + [""] * 6 + [_matrix_cell("Ring female modern prompt")],
+    ]
+
 
 def _png_bytes(color: str = "gold") -> bytes:
     import io
@@ -67,6 +89,13 @@ def _fast_polling(monkeypatch: MonkeyPatch) -> None:
 
 
 def _ctx(redis: Redis, sheets_client: FakeSheetsClient | None = None) -> dict[str, object]:
+    """Defaults to a FakeSheetsClient pre-populated with the synthetic pivot
+    grid above — this is what a real worker ctx always carries (see
+    app/worker/settings.py's `_build_sheets_client`), so tests only pass an
+    explicit client when they need to observe/customise its behaviour (e.g.
+    tracking Sheets writes)."""
+    if sheets_client is None:
+        sheets_client = FakeSheetsClient(rows=_matrix_rows())
     return {"app_redis": redis, "sheets_client": sheets_client}
 
 
@@ -87,7 +116,7 @@ async def test_mock_job_reaches_succeeded_end_to_end(
 ) -> None:
     job = await _make_job(redis, jewelry_type_requested=JewelryType.RING)
     await redis_store.set_row_index(redis, job.job_id, 2)
-    client = FakeSheetsClient()
+    client = FakeSheetsClient(rows=_matrix_rows())
 
     await tasks.run_job_pipeline(_ctx(redis, client), job.job_id)
 
@@ -205,12 +234,17 @@ async def test_matrix_miss_fails_job(redis: Redis, monkeypatch: MonkeyPatch) -> 
     assert final.error_code == ErrorCode.MATRIX_MISS
 
 
-async def test_matrix_lookup_hit_and_miss() -> None:
-    hit = await resolve_matrix_row(JewelryType.RING, ServiceType.FEMALE_MODEL_TRADITIONAL)
+async def test_matrix_lookup_hit_and_miss(redis: Redis) -> None:
+    client = FakeSheetsClient(rows=_matrix_rows())
+    hit = await resolve_matrix_row(
+        redis, client, SHEET_ID, JewelryType.RING, ServiceType.FEMALE_MODEL_TRADITIONAL
+    )
     assert hit is not None
     assert hit.prompt
 
-    miss = await resolve_matrix_row(JewelryType.HIPBELT, ServiceType.MALE_MODEL_TRADITIONAL)
+    miss = await resolve_matrix_row(
+        redis, client, SHEET_ID, JewelryType.HIPBELT, ServiceType.MALE_MODEL_TRADITIONAL
+    )
     assert miss is None
 
 
@@ -236,7 +270,7 @@ async def test_asset_fetchable_via_route_after_pipeline(
 async def test_mock_run_produces_exactly_two_sheets_writes_and_no_spend(
     redis: Redis, fake_provider: FakeProvider
 ) -> None:
-    client = FakeSheetsClient()
+    client = FakeSheetsClient(rows=_matrix_rows())
     job = await _make_job(redis, jewelry_type_requested=JewelryType.RING, mock=True)
     await redis_store.set_row_index(redis, job.job_id, 5)
 

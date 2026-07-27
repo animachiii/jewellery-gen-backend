@@ -46,7 +46,7 @@ from app.providers.base import GenerationRequest
 from app.providers.factory import get_provider
 from app.services.classifier import get_classifier
 from app.services.dedupe import record_dedupe
-from app.services.matrix import current_matrix_version, resolve_matrix_row
+from app.services.matrix import MatrixUnavailableError, current_matrix_version, resolve_matrix_row
 from app.storage.factory import get_storage_adapter
 from app.store import redis_store
 from app.store.sheets_store import SheetsClient, safe_update_job_row
@@ -171,12 +171,28 @@ async def _resolve_and_submit(redis: Redis, ctx: dict[str, Any], job: Job) -> Jo
     snapshot fields once immutably (R8), transitions to SUBMITTING, and
     chains straight into the submit stage."""
     assert job.jewelry_type_final is not None
-    row = await resolve_matrix_row(job.jewelry_type_final, job.service)
+    jewelry_type_final = job.jewelry_type_final
+    sheets_client = ctx.get("sheets_client")
+
+    async def _do_resolve() -> Any:
+        return await resolve_matrix_row(
+            redis, sheets_client, settings.google_sheet_id, jewelry_type_final, job.service
+        )
+
+    try:
+        row = await retry_free(_do_resolve, delays=RETRY_DELAYS)
+    except MatrixUnavailableError:
+        log.warning("matrix.unavailable", job_id=job.job_id)
+        return await _transition_and_persist(
+            redis, ctx, job, JobStatus.FAILED, error_code=ErrorCode.MATRIX_UNAVAILABLE
+        )
 
     if row is None:
         return await _transition_and_persist(
             redis, ctx, job, JobStatus.FAILED, error_code=ErrorCode.MATRIX_MISS
         )
+
+    matrix_version = await current_matrix_version(redis, sheets_client, settings.google_sheet_id)
 
     job = await _transition_and_persist(
         redis,
@@ -187,7 +203,7 @@ async def _resolve_and_submit(redis: Redis, ctx: dict[str, Any], job: Job) -> Jo
         negative_prompt_snapshot=row.negative_prompt,
         reference_url_snapshot=row.reference_url,
         provider_params_snapshot=row.params,
-        matrix_version=current_matrix_version(),
+        matrix_version=matrix_version,
     )
     return await _submit(redis, ctx, job)
 

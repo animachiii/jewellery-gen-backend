@@ -145,6 +145,8 @@ Do not build these without an explicit decision:
 
 > ⚠️ **Snapshot of a work-in-progress sheet.** The client is still actively building out `Sheet1` — this grid, the two data-quality issues below, and the "zero variants" gaps are a point-in-time read, not a finished deliverable. Re-run `python scripts/validate_matrix.py` before Phase 3 (matrix reading) and again before Phase 6 (client benchmark/handover) rather than trusting this table as final.
 
+> **Phase 3 update:** `app/services/matrix.py` now reads `Sheet1` for real (via `SheetsClient.read_all_rows`, parsed by the shared `app/services/matrix_parser.py`, cached in Redis with a TTL and version hash — see `docs/schema.md` §3 and `docs/business-rules.md` §5), replacing the Phase 1 stub. This build sandbox has no network access, so the table below is still the Phase 0a snapshot, not a live re-read. **Re-running `python scripts/validate_matrix.py` against the current live sheet to refresh this snapshot is a pending manual step for the project owner** — do this before trusting the coverage grid below, and again before Phase 6.
+
 Produced by `python scripts/validate_matrix.py` against the client's real `Sheet1`. `x` = at least one prompt variant exists; `.` = `MATRIX_MISS` if requested. Blank combinations below are expected, not bugs — the client has not authored prompts for them yet.
 
 ```

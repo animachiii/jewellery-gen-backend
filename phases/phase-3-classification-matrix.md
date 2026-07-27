@@ -78,9 +78,9 @@ Before declaring this phase complete:
 6. Only say "Phase 3 Complete" when every checkpoint is green, docs are in sync, and manual verification is either done or explicitly flagged pending.
 
 ## Manual Verification (fill in after real runs)
-- [ ] Gemini classification smoke test: **PENDING** — requires network access this session does not have.
-- [ ] Live matrix refresh smoke test: **PENDING** — requires network access this session does not have.
-- [ ] Re-run `scripts/validate_matrix.py` against the current live sheet: **PENDING**.
+- [ ] Gemini classification smoke test: **PENDING** — requires network access this session does not have. To run: submit a real product photo through `GeminiClassifier.classify()` (or via `POST /generate` with `jewelry_type` omitted) against the real `GEMINI_API_KEY`, and confirm `is_jewelry`, `predictions` (3, descending confidence), and `notes` come back in the documented shape with sane values.
+- [ ] Live matrix refresh smoke test: **PENDING** — requires network access this session does not have. To run: call `POST /api/v1/admin/matrix/refresh` with the real `ADMIN_API_KEY` against a deployment with real `GOOGLE_SHEET_ID`/`GOOGLE_SERVICE_ACCOUNT_JSON`, and confirm `rows_loaded` matches the sheet's real variant count and `matrix_version` is a stable 16-hex-char hash across repeated no-op refreshes. Then resolve a job for a combination known to have prompt variants (e.g. `RING` × `FEMALE_MODEL_TRADITIONAL`) and confirm the real prompt text and Drive reference URL land in `prompt_snapshot`/`reference_url_snapshot`.
+- [ ] Re-run `scripts/validate_matrix.py` against the current live sheet: **PENDING** — `python scripts/validate_matrix.py` (add `--skip-url-check` for a network-light pass) to refresh the `docs/business-rules.md` → "Matrix Coverage" snapshot, confirm the two flagged data-quality issues (row 16 missing prompt text, row 23 missing a reference URL) are still accurate or have been fixed, and update that section's coverage grid accordingly.
 
 ## Final Phase 3 Checklist
 - [ ] `GeminiClassifier` implements the `Classifier` Protocol behind `get_classifier()`, `StubClassifier` preserved as the test fixture

@@ -14,11 +14,15 @@ from pydantic import BaseModel
 
 from app.api.deps import require_admin_key
 from app.api.errors import NotFoundError
+from app.config import settings
+from app.core.logging import get_logger
 from app.models.job import Job, _iso
-from app.services.matrix import current_matrix_version
+from app.services.matrix import refresh_matrix
 from app.store.redis_store import get_job
+from app.store.sheets_store import GoogleSheetsClient, SheetsClient
 
 router = APIRouter()
+log = get_logger(__name__)
 
 
 class MatrixRefreshResponse(BaseModel):
@@ -55,16 +59,32 @@ class AdminJobResponse(BaseModel):
     error_message: str | None
 
 
+def _build_sheets_client() -> SheetsClient | None:
+    """Mirrors app/api/v1/generate.py's `_build_sheets_client` — kept as a
+    small local duplicate rather than a shared import, per this codebase's
+    established convention for this exact 5-line pattern (see that module's
+    comment on the same function)."""
+    try:
+        return GoogleSheetsClient(settings.google_service_account_info)
+    except Exception:
+        log.warning("sheets.client.unavailable")
+        return None
+
+
 @router.post("/admin/matrix/refresh", response_model=MatrixRefreshResponse)
-async def refresh_matrix(
+async def refresh_matrix_route(
+    request: Request,
     _admin: Annotated[None, Depends(require_admin_key)],
 ) -> MatrixRefreshResponse:
-    # Phase 1: the worker-internal matrix is a fixed in-process stub (no
-    # Sheets-backed cache to invalidate yet — see app/services/matrix.py).
-    # Phase 3 replaces this with a real forced re-read of Sheet1, bypassing
-    # MATRIX_CACHE_TTL.
+    """Forces an immediate re-read of Sheet1, bypassing MATRIX_CACHE_TTL
+    (docs/api-routes.md)."""
+    redis = request.app.state.redis
+    sheets_client = _build_sheets_client()
+    matrix_version, rows_loaded, changed = await refresh_matrix(
+        redis, sheets_client, settings.google_sheet_id, force=True
+    )
     return MatrixRefreshResponse(
-        matrix_version=current_matrix_version(), rows_loaded=0, changed=False
+        matrix_version=matrix_version, rows_loaded=rows_loaded, changed=changed
     )
 
 

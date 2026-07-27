@@ -29,7 +29,7 @@ Update the **Status** column manually as you go. Check this file before asking f
 | **0b** | State Layer | Job model, state machine, Redis store, Sheets write-behind log, dedupe/idempotency, boot rehydration, stuck-job sweeper cron. No routes. | Sequential after 0a | Complete |
 | **1** | API Contract & Mock Pipeline | All routes, auth, multipart validation, error envelope, storage/provider adapter seams, `FakeProvider`, and an end-to-end mock job through the real state machine. **Contract frozen.** | Sequential after 0b | Complete |
 | **2** | Ingestion & Storage | Real Google Drive adapter replacing `LocalStorage`; source-image retention; asset streaming/signed-URL delivery; Drive quota and error handling. | After 1. **Parallel with 3** | Complete |
-| **3** | Classification & Matrix | Real Gemini 2.5 Flash classifier with structured output and the confidence/`needs_input` branch; real Sheets matrix reader with Redis TTL cache, version hashing, and admin refresh. Replaces both Phase 1 stubs. | After 1. **Parallel with 2** | In progress |
+| **3** | Classification & Matrix | Real Gemini 2.5 Flash classifier with structured output and the confidence/`needs_input` branch; real Sheets matrix reader with Redis TTL cache, version hashing, and admin refresh. Replaces both Phase 1 stubs. | After 1. **Parallel with 2** | Complete |
 | **4** | Provider Integration | Real Higgsfield adapter: submit with `submission_token`, poll, asset fetch, timeout and error mapping. The `max_tries=1` submit-safety contract from Phase 1 must hold against the real API. | Sequential after 2 **and** 3 | Not started |
 | **5** | Showcase UI | Single-file `ui/index.html`: upload → job_id → poll → render, with visible status and error readout. Built against `mock=true` so iteration costs nothing. | After 1; realistically after 4. **Parallel with 6/7/8** | Not started |
 | **6** | Testing & Verification | Cross-phase e2e suite against `FakeProvider`, classification accuracy benchmark on ~50 labelled client photos, money-path tests, light load test. | After 4. **Parallel with 7/8** | Not started |
@@ -86,7 +86,9 @@ Conditions that should reopen a locked decision rather than being worked around:
 
 Generate one phase at a time, after the prior one is actually built and verified. When requesting the next spec, describe what's **actually true** about the codebase — including anything that diverged from this plan.
 
-Currently ready to build: **Phase 3** (Classification & Matrix — real Gemini classifier, real Sheets matrix reader). Phases 0a, 0b, 1, and 2 are all complete. Phase 4 (Provider Integration) needs both 2 and 3 done first, so Phase 3 is the next sequential blocker.
+Phases 0a, 0b, 1, 2, and 3 are all complete. Currently ready to build: **Phase 4** (Provider Integration — real Higgsfield adapter), now that both its dependencies (2 and 3) are done.
+
+**Outstanding from Phase 3**: three manual verification items are pending network access — see `phases/phase-3-classification-matrix.md` → "Manual Verification" (a live Gemini classification smoke test, a live `POST /admin/matrix/refresh` against the real spreadsheet, and re-running `scripts/validate_matrix.py` against the live sheet to refresh the Matrix Coverage snapshot in `docs/business-rules.md`).
 
 **Outstanding from Phase 2**: the manual live-Drive smoke test (`phases/phase-2-ingestion-storage.md` → "Manual Verification") is still genuinely pending — the build sandbox has no network access to call the real Drive API. Run it in a networked environment before trusting `DriveStorage` against production: `put()` a small payload with real `.env` credentials, confirm it lands in `GDRIVE_FOLDER_ID`, `get()` it back, byte-compare, then delete the test file.
 
