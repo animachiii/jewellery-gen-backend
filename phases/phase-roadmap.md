@@ -86,6 +86,8 @@ Conditions that should reopen a locked decision rather than being worked around:
 
 Generate one phase at a time, after the prior one is actually built and verified. When requesting the next spec, describe what's **actually true** about the codebase — including anything that diverged from this plan.
 
-Currently ready to build: **Phase 1**. Phases 0a and 0b are both complete.
+Currently ready to build: **Phase 3** (Classification & Matrix — real Gemini classifier, real Sheets matrix reader). Phases 0a, 0b, 1, and 2 are all complete. Phase 4 (Provider Integration) needs both 2 and 3 done first, so Phase 3 is the next sequential blocker.
 
-**Precondition for Phase 1**: the `JobLog` tab does not exist yet on the client's real spreadsheet — only `Sheet1` (the prompt matrix) is there. `app/store/sheets_store.py` and `app/store/rehydrate.py` are built and fully tested against `FakeSheetsClient`, but neither has run against a real `JobLog` tab. Create the tab (headers A–T, `docs/schema.md` §2) before Phase 1 exercises real Sheets writes, or Phase 1's end-to-end mock-pipeline checkpoint will need to keep using the fake client for that path too.
+**Outstanding from Phase 2**: the manual live-Drive smoke test (`phases/phase-2-ingestion-storage.md` → "Manual Verification") is still genuinely pending — the build sandbox has no network access to call the real Drive API. Run it in a networked environment before trusting `DriveStorage` against production: `put()` a small payload with real `.env` credentials, confirm it lands in `GDRIVE_FOLDER_ID`, `get()` it back, byte-compare, then delete the test file.
+
+**Precondition carried over from Phase 1**: the `JobLog` tab still needs to exist on the client's real spreadsheet before any real (non-`FakeSheetsClient`) Sheets write is exercised — only `Sheet1` (the prompt matrix) is confirmed live so far.
