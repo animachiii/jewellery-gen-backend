@@ -44,7 +44,7 @@ from app.models.enums import TERMINAL_STATUSES, ErrorCode, JobStatus, TypeSource
 from app.models.job import Job
 from app.providers.base import GenerationRequest
 from app.providers.factory import get_provider
-from app.services.classifier import StubClassifier
+from app.services.classifier import get_classifier
 from app.services.dedupe import record_dedupe
 from app.services.matrix import current_matrix_version, resolve_matrix_row
 from app.storage.factory import get_storage_adapter
@@ -122,7 +122,7 @@ async def _do_classify_body(redis: Redis, ctx: dict[str, Any], job: Job) -> Job:
 
     async def _fetch_and_classify() -> Any:
         source_bytes, _ = await storage.get(job.source_ref)
-        return await StubClassifier().classify(source_bytes)
+        return await get_classifier().classify(source_bytes)
 
     result = await retry_free(_fetch_and_classify, delays=RETRY_DELAYS)
 

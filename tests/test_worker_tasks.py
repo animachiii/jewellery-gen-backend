@@ -106,8 +106,15 @@ async def test_mock_job_reaches_succeeded_end_to_end(
 
 
 async def test_classify_then_resolve_path_when_no_type_requested(
-    redis: Redis, fake_provider: FakeProvider
+    redis: Redis, fake_provider: FakeProvider, monkeypatch: MonkeyPatch
 ) -> None:
+    # No real classifier call here (no network in tests) — StubClassifier is
+    # the test fixture standing in for get_classifier(), per
+    # docs/conventions.md → Testing ("No test may call a real external
+    # service").
+    from app.services.classifier import StubClassifier
+
+    monkeypatch.setattr("app.worker.tasks.get_classifier", lambda: StubClassifier())
     job = await _make_job(
         redis, jewelry_type_requested=None, service=ServiceType.FEMALE_MODEL_MODERN
     )
@@ -128,20 +135,24 @@ async def test_classify_then_resolve_path_when_no_type_requested(
 async def test_low_confidence_classification_parks_in_needs_input(
     redis: Redis, monkeypatch: MonkeyPatch
 ) -> None:
-    """Wires the threshold branch for real: monkeypatch StubClassifier.classify
-    to return a low-confidence result and prove needs_input is reachable."""
+    """Wires the threshold branch for real: monkeypatch get_classifier to
+    return a fake classifier producing a low-confidence result, proving
+    needs_input is reachable through the real get_classifier() call site."""
 
-    async def _low_confidence(self: object, image_bytes: bytes) -> ClassificationResult:
-        return ClassificationResult(
-            is_jewelry=True,
-            predictions=[
-                Prediction(jewelry_type=JewelryType.ANKLET, confidence=0.4),
-                Prediction(jewelry_type=JewelryType.BRACELET, confidence=0.35),
-                Prediction(jewelry_type=JewelryType.RING, confidence=0.25),
-            ],
-        )
+    class _LowConfidenceClassifier:
+        async def classify(self, image_bytes: bytes) -> ClassificationResult:
+            return ClassificationResult(
+                is_jewelry=True,
+                predictions=[
+                    Prediction(jewelry_type=JewelryType.ANKLET, confidence=0.4),
+                    Prediction(jewelry_type=JewelryType.BRACELET, confidence=0.35),
+                    Prediction(jewelry_type=JewelryType.RING, confidence=0.25),
+                ],
+            )
 
-    monkeypatch.setattr("app.services.classifier.StubClassifier.classify", _low_confidence)
+    monkeypatch.setattr(
+        "app.worker.tasks.get_classifier", lambda: _LowConfidenceClassifier()
+    )
     job = await _make_job(redis, jewelry_type_requested=None)
 
     await tasks.run_job_pipeline(_ctx(redis), job.job_id)
@@ -156,17 +167,18 @@ async def test_low_confidence_classification_parks_in_needs_input(
 
 
 async def test_not_jewelry_classification_fails_job(redis: Redis, monkeypatch: MonkeyPatch) -> None:
-    async def _not_jewelry(self: object, image_bytes: bytes) -> ClassificationResult:
-        return ClassificationResult(
-            is_jewelry=False,
-            predictions=[
-                Prediction(jewelry_type=JewelryType.RING, confidence=0.5),
-                Prediction(jewelry_type=JewelryType.BANGLE, confidence=0.3),
-                Prediction(jewelry_type=JewelryType.EARRING, confidence=0.2),
-            ],
-        )
+    class _NotJewelryClassifier:
+        async def classify(self, image_bytes: bytes) -> ClassificationResult:
+            return ClassificationResult(
+                is_jewelry=False,
+                predictions=[
+                    Prediction(jewelry_type=JewelryType.RING, confidence=0.5),
+                    Prediction(jewelry_type=JewelryType.BANGLE, confidence=0.3),
+                    Prediction(jewelry_type=JewelryType.EARRING, confidence=0.2),
+                ],
+            )
 
-    monkeypatch.setattr("app.services.classifier.StubClassifier.classify", _not_jewelry)
+    monkeypatch.setattr("app.worker.tasks.get_classifier", lambda: _NotJewelryClassifier())
     job = await _make_job(redis, jewelry_type_requested=None)
 
     await tasks.run_job_pipeline(_ctx(redis), job.job_id)
