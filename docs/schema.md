@@ -260,9 +260,10 @@ Every job read/write verifies `api_key_name` matches the caller. A valid key for
 | `SUPABASE_SERVICE_ROLE_KEY` | required if `STORAGE_BACKEND=supabase` | — | Service role key (bypasses RLS on the storage bucket) |
 | `SUPABASE_STORAGE_BUCKET` | required if `STORAGE_BACKEND=supabase` | — | Private bucket name for source images and generated assets |
 | `GEMINI_API_KEY` | yes | — | |
-| `GEMINI_MODEL` | no | `gemini-2.5-flash` | |
+| `GEMINI_MODEL` | no | `gemini-3.1-flash-lite` | See `docs/ai-integration.md` §1 for why — `gemini-2.5-flash`/`-flash-lite` are 404 "no longer available to new users" on this project's API key, confirmed via live smoke test |
 | `CLASSIFIER_CONFIDENCE_THRESHOLD` | no | `0.75` | Below → `needs_input` |
 | `HIGGSFIELD_API_KEY` | yes (prod) | — | |
+| `HIGGSFIELD_BASE_URL` | no | `https://api.higgsfield.ai` | **Unconfirmed placeholder** — see `phases/phase-4-provider-integration.md` → Manual Verification |
 | `PROVIDER` | no | `higgsfield` | `higgsfield` \| `fake` |
 | `MAX_IMAGE_BYTES` | no | `15728640` | 15 MB |
 | `JOB_DEADLINE_SECONDS` | no | `900` | 15 min |

@@ -15,7 +15,7 @@ This is v1: a decoupled replacement for an existing n8n/Telegram prototype. The 
 
 ## Tech Stack
 
-Python 3.12 + FastAPI · ARQ + Redis (queue) · Google Sheets (durable job log + prompt matrix) + Redis (live job state) · Supabase Storage via storage adapter · Gemini 2.5 Flash (classification) · Higgsfield (generation, abstracted) · API-key auth · Docker Compose → Railway/Render
+Python 3.12 + FastAPI · ARQ + Redis (queue) · Google Sheets (durable job log + prompt matrix) + Redis (live job state) · Supabase Storage via storage adapter · Gemini 3.1 Flash Lite (classification — see docs/ai-integration.md §1 for why not 2.5 Flash) · Higgsfield (generation, abstracted) · API-key auth · Docker Compose → Railway/Render
 
 ## Folder Structure
 

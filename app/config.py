@@ -55,12 +55,17 @@ class Settings(BaseSettings):
     gdrive_folder_id: str = Field(alias="GDRIVE_FOLDER_ID")
 
     gemini_api_key: str = Field(alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.1-flash-lite", alias="GEMINI_MODEL")
     classifier_confidence_threshold: float = Field(
         default=0.75, alias="CLASSIFIER_CONFIDENCE_THRESHOLD"
     )
 
     higgsfield_api_key: str | None = Field(default=None, alias="HIGGSFIELD_API_KEY")
+    # PLACEHOLDER default -- unconfirmed real Higgsfield base URL, see
+    # phases/phase-4-provider-integration.md "Manual Verification".
+    higgsfield_base_url: str = Field(
+        default="https://api.higgsfield.ai", alias="HIGGSFIELD_BASE_URL"
+    )
     provider: Literal["higgsfield", "fake"] = Field(default="higgsfield", alias="PROVIDER")
 
     local_storage_dir: str = Field(default="./data/storage", alias="LOCAL_STORAGE_DIR")

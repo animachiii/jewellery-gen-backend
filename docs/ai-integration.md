@@ -4,20 +4,23 @@ Two AI calls exist in v1. Both sit behind adapters. Nothing else in the system m
 
 | # | Purpose | Model | Trigger | Cost class |
 |---|---------|-------|---------|-----------|
-| 1 | Jewellery type classification | Gemini 2.5 Flash | `jewelry_type` omitted on submit | cheap, retryable |
+| 1 | Jewellery type classification | Gemini 3.1 Flash Lite | `jewelry_type` omitted on submit | cheap, retryable |
 | 2 | Image generation | Higgsfield (abstracted) | Every non-mock job | **expensive, never auto-retried** |
 
 **There is no third AI call.** In particular, no model rewrites, expands, or validates prompts — see business rule R7.
 
 ---
 
-## 1. Classification — Gemini 2.5 Flash
+## 1. Classification — Gemini 3.1 Flash Lite
 
 **Module:** `app/services/classifier.py`
 **Trigger:** worker `classify` stage, only when `jewelry_type_requested` is null. A client-supplied type skips this entirely (R11).
 
-### Why Flash, not Flash Lite
-Classification cost is a rounding error next to generation cost, and a misclassification wastes a full paid generation *plus* client trust. Flash is the safer default. Phase 6 benchmarks Flash Lite against Flash on ~50 labelled client photos; downgrade only if accuracy matches.
+### Model note (Phase 3 live smoke test, superseding the original Flash-vs-Lite reasoning below)
+The originally-planned `gemini-2.5-flash` and `gemini-2.5-flash-lite` both return `404 NOT_FOUND` — *"no longer available to new users"* — on this project's API key, confirmed live. Tested and confirmed working on this account: `gemini-flash-latest`, `gemini-flash-lite-latest`, and `gemini-3.1-flash-lite`. `GEMINI_MODEL` is set to `gemini-3.1-flash-lite`. `gemini-3-flash-lite` and `gemini-2.5-flash-lite-preview` do **not** exist (404, not an access restriction). Re-check availability if this ever needs revisiting — Google's model lineup and per-key access change over time, and `GEMINI_MODEL` is a plain env var, not a code change, to swap.
+
+### Why Flash, not Flash Lite (original reasoning, now moot for this account)
+Classification cost is a rounding error next to generation cost, and a misclassification wastes a full paid generation *plus* client trust — full Flash was the intended safer default. That model isn't available to this API key at all, so the choice is between two Lite variants that *are* available, not a deliberate cost/accuracy tradeoff. Phase 6 still benchmarks classification accuracy against labelled client photos; the threshold (`CLASSIFIER_CONFIDENCE_THRESHOLD`) is the lever to compensate if Lite proves less reliable than full Flash would have been.
 
 ### Input
 - Source image bytes (the original upload, not a re-encode)
