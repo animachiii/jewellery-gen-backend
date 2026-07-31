@@ -144,7 +144,7 @@ One spreadsheet, ID in `GOOGLE_SHEET_ID`. Service account needs Editor. As of Ph
 
 ## 3. Redis Keyspace
 
-Requires AOF (`appendfsync everysec`) and a mounted volume — Redis is authoritative for live reads.
+Requires AOF (`appendfsync everysec`) and a mounted volume — Redis is authoritative for live reads. In production (Railway, Phase 9) this is a self-hosted `redis:7-alpine` service running this exact command, on a Railway volume mounted at `/data` — not Railway's managed Redis plugin, specifically to keep the deployed instance byte-for-byte consistent with what `docker-compose.yml` runs locally and what every phase has been tested against. See `docs/deployment.md` §1 and §5 for the topology and the persistence verification procedure.
 
 | Key | Type | TTL | Contents |
 |-----|------|-----|----------|
@@ -241,6 +241,14 @@ Not in Sheets — the client can read that spreadsheet.
 
 Every job read/write verifies `api_key_name` matches the caller. A valid key for client A requesting client B's `job_id` gets **404**, not 403 — do not leak existence.
 
+**Admin key handling (Phase 7 review, decision recorded rather than silently left asymmetric):** unlike client keys, `admin_api_key` is held as a **plaintext string in memory** for the life of the process (`app/config.py`'s `Settings.admin_api_key: str`, no hashing validator) and compared via `hmac.compare_digest(plaintext, settings.admin_api_key)` in `app/api/deps.py`'s `require_admin_key`. This is a deliberate tradeoff, not an oversight:
+
+- There is exactly one admin credential in v1 — a single operator, not a multi-tenant set like client keys — so there is no per-admin audit trail to lose by not hashing it.
+- `hmac.compare_digest` already makes the comparison itself timing-safe; hashing would add no additional protection against the comparison being exploited, only against the value being readable from a process memory dump — a threat model this system doesn't otherwise defend against (client keys' hashing exists to keep plaintext out of the in-memory map that's iterated on every request, not primarily as a memory-dump defense).
+- **What would change this decision:** multiple admin operators needing distinct, individually-revocable credentials, or a requirement to attribute admin actions to a specific operator in logs/audit — either would need the same shape as client keys (`{hash: admin_name}`), at which point `require_admin_key` should be refactored to mirror `require_client_key` exactly.
+
+No code change was made as a result of this review — the plaintext-in-memory tradeoff holds for v1's single-admin-credential model.
+
 ---
 
 ## 6. Environment Variables
@@ -249,6 +257,7 @@ Every job read/write verifies `api_key_name` matches the caller. A valid key for
 |-----|----------|---------|---------|
 | `ENV` | yes | `local` | `local` \| `staging` \| `prod` |
 | `LOG_LEVEL` | no | `INFO` | |
+| `CORS_ALLOWED_ORIGINS` | no | `` (empty) | Comma-separated allowed origins. Fails closed — empty means no cross-origin access at all (Phase 7) |
 | `API_KEYS` | yes | — | `name:key` pairs |
 | `ADMIN_API_KEY` | yes | — | Admin routes |
 | `REDIS_URL` | yes | — | Must point at an AOF-enabled instance |
@@ -256,6 +265,7 @@ Every job read/write verifies `api_key_name` matches the caller. A valid key for
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | yes | — | Base64 of the service account key |
 | `GDRIVE_FOLDER_ID` | yes | — | Destination folder |
 | `STORAGE_BACKEND` | no | `local` | `local` \| `drive` \| `supabase`. Phase 2 adapter selector |
+| `LOCAL_STORAGE_DIR` | no | `./data/storage` | Filesystem root used only when `STORAGE_BACKEND=local` (tests/dev) |
 | `SUPABASE_URL` | required if `STORAGE_BACKEND=supabase` | — | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | required if `STORAGE_BACKEND=supabase` | — | Service role key (bypasses RLS on the storage bucket) |
 | `SUPABASE_STORAGE_BUCKET` | required if `STORAGE_BACKEND=supabase` | — | Private bucket name for source images and generated assets |
@@ -264,12 +274,15 @@ Every job read/write verifies `api_key_name` matches the caller. A valid key for
 | `CLASSIFIER_CONFIDENCE_THRESHOLD` | no | `0.75` | Below → `needs_input` |
 | `HIGGSFIELD_API_KEY` | yes (prod) | — | |
 | `HIGGSFIELD_BASE_URL` | no | `https://api.higgsfield.ai` | **Unconfirmed placeholder** — see `phases/phase-4-provider-integration.md` → Manual Verification |
-| `PROVIDER` | no | `higgsfield` | `higgsfield` \| `fake` |
+| `PROVIDER` | no | `higgsfield` | `higgsfield` \| `fake` \| `higgsfield_mcp_bridge` |
+| `HIGGSFIELD_MCP_BRIDGE_URL` | no | `http://127.0.0.1:8799` | Testing/showcase-only local MCP bridge sidecar; used only when `PROVIDER=higgsfield_mcp_bridge`. See `app/providers/higgsfield_mcp_bridge.py` |
 | `MAX_IMAGE_BYTES` | no | `15728640` | 15 MB |
 | `JOB_DEADLINE_SECONDS` | no | `900` | 15 min |
 | `DEDUPE_WINDOW_SECONDS` | no | `86400` | 24h |
 | `MATRIX_CACHE_TTL` | no | `300` | |
 | `WORKER_CONCURRENCY` | no | `4` | Must respect the provider's cap |
 | `DAILY_GENERATION_CAP` | no | `200` | Billable jobs per day |
-| `RATE_LIMIT_PER_MINUTE` | no | `60` | Per key |
-| `SENTRY_DSN` | no | — | Phase 8 |
+| `RATE_LIMIT_PER_MINUTE` | no | `60` | Per key. All routes except the single-job poll below |
+| `POLLING_RATE_LIMIT_PER_MINUTE` | no | `180` | Per key. `GET /jobs/{id}` only — separate bucket, resolves R20 (Phase 7) |
+| `SENTRY_DSN` | no | — | Error tracking (Phase 8, free-tier Sentry). Unset = `init_sentry()` is a true no-op — no client bound, `capture_*` calls become harmless no-ops. Initialized separately in both the API process (`app/main.py`) and the ARQ worker process (`app/worker/settings.py`) |
+| `WORKER_IN_PROCESS` | no | `false` | Phase 9, free-tier deploy path only (`docs/deployment-free-tier.md`). `true` runs the ARQ worker loop as a background task inside the API process (`app/main.py`'s `lifespan`), for hosts with no free always-on background-worker tier. Never set on the Railway/Compose topology, which runs `api` and `worker` as separate processes as designed |

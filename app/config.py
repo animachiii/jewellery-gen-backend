@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import os
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -21,6 +22,15 @@ def _parse_api_keys(raw: str) -> dict[str, str]:
     if not result:
         raise ValueError("API_KEYS must contain at least one 'name:key' pair")
     return result
+
+
+def _parse_cors_origins(raw: str) -> tuple[str, ...]:
+    """Comma-separated list of allowed CORS origins. Empty string -> no
+    cross-origin access at all (fail closed — docs/business-rules.md's CORS
+    section). Whitespace around each origin is trimmed; blank entries are
+    dropped so a trailing comma doesn't silently become a wildcard-like ''."""
+    origins = tuple(o.strip() for o in raw.split(",") if o.strip())
+    return origins
 
 
 def _decode_service_account_json(raw: str) -> dict[str, object]:
@@ -66,7 +76,14 @@ class Settings(BaseSettings):
     higgsfield_base_url: str = Field(
         default="https://api.higgsfield.ai", alias="HIGGSFIELD_BASE_URL"
     )
-    provider: Literal["higgsfield", "fake"] = Field(default="higgsfield", alias="PROVIDER")
+    provider: Literal["higgsfield", "fake", "higgsfield_mcp_bridge"] = Field(
+        default="higgsfield", alias="PROVIDER"
+    )
+    # TESTING/SHOWCASE ONLY -- see app/providers/higgsfield_mcp_bridge.py.
+    # Not the intended production path; used only when PROVIDER=higgsfield_mcp_bridge.
+    higgsfield_mcp_bridge_url: str = Field(
+        default="http://127.0.0.1:8799", alias="HIGGSFIELD_MCP_BRIDGE_URL"
+    )
 
     local_storage_dir: str = Field(default="./data/storage", alias="LOCAL_STORAGE_DIR")
     storage_backend: Literal["local", "drive", "supabase"] = Field(
@@ -74,9 +91,7 @@ class Settings(BaseSettings):
     )
 
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
-    supabase_service_role_key: str | None = Field(
-        default=None, alias="SUPABASE_SERVICE_ROLE_KEY"
-    )
+    supabase_service_role_key: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
     supabase_storage_bucket: str | None = Field(default=None, alias="SUPABASE_STORAGE_BUCKET")
 
     # Testing/dev-only knob for FakeProvider failure injection (not a deployment var).
@@ -91,8 +106,32 @@ class Settings(BaseSettings):
     worker_concurrency: int = Field(default=4, alias="WORKER_CONCURRENCY")
     daily_generation_cap: int = Field(default=200, alias="DAILY_GENERATION_CAP")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
+    # Phase 7 Step 5 — resolves docs/business-rules.md R20's documented
+    # tension: 10 concurrent jobs polling GET /jobs/{id} at the recommended
+    # 5s interval is 120/min, which would trip the 60/min default. This is a
+    # separate, more generous limit for that one hot, cheap, read-only route
+    # — everything else (POST /generate, resolve, assets, matrix) keeps the
+    # tighter default. 180/min clears 10-concurrent-at-5s (120/min) with
+    # comfortable headroom for the client polling a few extra in-flight jobs.
+    polling_rate_limit_per_minute: int = Field(default=180, alias="POLLING_RATE_LIMIT_PER_MINUTE")
+
+    # Phase 7 R21 — fail closed by default (empty = no cross-origin access at
+    # all). A real cross-origin client (Flutter web build, separately-hosted
+    # showcase) must be added explicitly; there is no implicit same-origin
+    # assumption baked into this setting.
+    cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = Field(
+        default=(), alias="CORS_ALLOWED_ORIGINS"
+    )
 
     sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
+
+    # Phase 9 (free-tier deploy path only): run the ARQ worker loop as a
+    # background task inside the API process instead of a separate worker
+    # process/container. Exists solely for hosts with no free always-on
+    # background-worker tier (e.g. Render's free Web Service) — see
+    # docs/deployment-free-tier.md. Never set true for the Railway/Compose
+    # topology, which runs api and worker as separate processes as designed.
+    worker_in_process: bool = Field(default=False, alias="WORKER_IN_PROCESS")
 
     @field_validator("api_keys", mode="before")
     @classmethod
@@ -104,6 +143,15 @@ class Settings(BaseSettings):
         if not isinstance(v, str):
             raise ValueError("API_KEYS must be a string")
         return _parse_api_keys(v)
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins_field(cls, v: object) -> tuple[str, ...]:
+        if isinstance(v, tuple):
+            return v
+        if not isinstance(v, str):
+            raise ValueError("CORS_ALLOWED_ORIGINS must be a string")
+        return _parse_cors_origins(v)
 
     @field_validator("google_service_account_info", mode="before")
     @classmethod
@@ -142,3 +190,32 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
+
+
+def reload_api_keys() -> int:
+    """Phase 7 Step 3 — key rotation without a process restart.
+
+    Re-reads `API_KEYS` from the process environment (not from `.env` on
+    disk — the deploy platform is expected to update the env var and trigger
+    `POST /api/v1/admin/keys/reload`, not have the app poll a file) and
+    atomically swaps `settings.api_keys`, the in-memory hash map
+    `app/api/deps.py`'s `require_client_key` looks up on every request.
+
+    Deliberately scoped to `API_KEYS` only. `admin_api_key`,
+    `google_service_account_info`, `gemini_api_key`, and `higgsfield_api_key`
+    are NOT reloadable this way — those are used to construct long-lived SDK
+    clients / are compared as a single static admin credential (see
+    `docs/schema.md` §5's admin-key review), and rotating them safely needs a
+    real process restart, not a hot-swap. This function only ever touches
+    `settings.api_keys`.
+
+    Also API-process-only by design, not an oversight: no code path under
+    `app/worker/` ever reads `settings.api_keys` (client-key verification only
+    happens in `require_client_key`, an API-only dependency), so a worker
+    process has nothing to rotate.
+    """
+    raw = os.environ.get("API_KEYS")
+    if not raw:
+        raise ValueError("API_KEYS is not set in the current process environment")
+    settings.api_keys = _parse_api_keys(raw)
+    return len(settings.api_keys)
