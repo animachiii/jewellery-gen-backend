@@ -62,7 +62,11 @@ class Settings(BaseSettings):
     google_service_account_info: Annotated[dict[str, object], NoDecode] = Field(
         alias="GOOGLE_SERVICE_ACCOUNT_JSON"
     )
-    gdrive_folder_id: str = Field(alias="GDRIVE_FOLDER_ID")
+    # Optional: only used by DriveStorage (app/storage/drive.py), which is
+    # built and tested but not the active backend (STORAGE_BACKEND=supabase
+    # in production -- see docs/schema.md's storage adapter note). Required
+    # only when STORAGE_BACKEND=drive, enforced below.
+    gdrive_folder_id: str | None = Field(default=None, alias="GDRIVE_FOLDER_ID")
 
     gemini_api_key: str = Field(alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-3.1-flash-lite", alias="GEMINI_MODEL")
@@ -177,6 +181,12 @@ class Settings(BaseSettings):
                 "SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET are "
                 "all required when STORAGE_BACKEND=supabase"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _require_gdrive_folder_id_when_selected(self) -> "Settings":
+        if self.storage_backend == "drive" and not self.gdrive_folder_id:
+            raise ValueError("GDRIVE_FOLDER_ID is required when STORAGE_BACKEND=drive")
         return self
 
     def __repr__(self) -> str:

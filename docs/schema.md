@@ -263,7 +263,7 @@ No code change was made as a result of this review — the plaintext-in-memory t
 | `REDIS_URL` | yes | — | Must point at an AOF-enabled instance |
 | `GOOGLE_SHEET_ID` | yes | — | Spreadsheet holding both tabs |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | yes | — | Base64 of the service account key |
-| `GDRIVE_FOLDER_ID` | yes | — | Destination folder |
+| `GDRIVE_FOLDER_ID` | required if `STORAGE_BACKEND=drive` | — | Destination folder for `DriveStorage` (built, tested, unused — `supabase` is the active production backend). Not needed at all otherwise; enforced by a conditional validator in `app/config.py`, same pattern as the `SUPABASE_*` vars |
 | `STORAGE_BACKEND` | no | `local` | `local` \| `drive` \| `supabase`. Phase 2 adapter selector |
 | `LOCAL_STORAGE_DIR` | no | `./data/storage` | Filesystem root used only when `STORAGE_BACKEND=local` (tests/dev) |
 | `SUPABASE_URL` | required if `STORAGE_BACKEND=supabase` | — | Supabase project URL |

@@ -43,7 +43,7 @@ Enter these directly in each service's **Variables** tab in the Railway dashboar
 | `ADMIN_API_KEY` | `api` | Generate a strong random value |
 | `GOOGLE_SHEET_ID` | `api`, `worker` | The client's spreadsheet ID (prod) or a test copy (staging — **never share this between environments**, see §3) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | `api`, `worker` | Base64 of the full service-account key JSON downloaded from the GCP console |
-| `GDRIVE_FOLDER_ID` | `worker` | Only relevant if `STORAGE_BACKEND=drive`; unused with the active `supabase` backend but still required by `Settings` — set to any placeholder if not using Drive |
+| `GDRIVE_FOLDER_ID` | `worker` (only if `STORAGE_BACKEND=drive`) | Not needed at all with the active `supabase` backend — `Settings` only requires it when `STORAGE_BACKEND=drive`. Omit entirely unless you're actually switching back to `DriveStorage` |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` | `worker` (and `api` for asset serving) | From the Supabase project dashboard |
 | `STORAGE_BACKEND` | `api`, `worker` | `supabase` in both staging and prod |
 | `GEMINI_API_KEY` | `worker` | Google AI Studio / GCP console |

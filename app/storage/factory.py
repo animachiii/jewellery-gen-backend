@@ -14,6 +14,7 @@ def get_storage_adapter() -> StorageAdapter:
     if settings.storage_backend == "drive":
         from app.storage.drive import DriveStorage, GoogleDriveClient
 
+        assert settings.gdrive_folder_id is not None
         drive_client = GoogleDriveClient(settings.google_service_account_info)
         return DriveStorage(drive_client, settings.gdrive_folder_id)
     if settings.storage_backend == "supabase":
