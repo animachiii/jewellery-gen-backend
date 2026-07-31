@@ -47,6 +47,19 @@ class JewelryType(str, Enum):
     HIPBELT = "HIPBELT"
 
 
+class Style(str, Enum):
+    """The style half of ServiceType's CATEGORY_STYLE naming (e.g.
+    FEMALE_MODEL_TRADITIONAL = category FEMALE_MODEL + style TRADITIONAL).
+    Values match app/services/matrix_parser.py's STYLE_LABELS. Used only by
+    the classify-preview route (app/api/v1/classify.py) to report Gemini's
+    predicted styling for the showcase UI's confirm-before-generate flow —
+    not stored on the Job record and not part of the frozen /generate
+    contract."""
+
+    TRADITIONAL = "TRADITIONAL"
+    MODERN = "MODERN"
+
+
 class ServiceType(str, Enum):
     """v1 values reconciled against the client's real matrix in Phase 0a Step 6: the
     sheet crosses 4 model/context categories with 2 styles (Traditional/Modern),

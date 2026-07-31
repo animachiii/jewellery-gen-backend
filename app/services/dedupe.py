@@ -39,10 +39,23 @@ async def record_dedupe(
     job_id: str,
     status: JobStatus,
     *,
+    mock: bool = False,
     ttl_seconds: int | None = None,
 ) -> None:
-    """Only succeeded jobs may be recorded (R3) — failures must stay retryable."""
-    if status is not JobStatus.SUCCEEDED:
+    """Only succeeded, non-mock jobs may be recorded.
+
+    - Only succeeded (R3) — failures must stay retryable.
+    - Never mock (R6). Dedupe exists purely to avoid paying twice for
+      identical work; a mock job costs nothing and produces a FakeProvider
+      placeholder, so it has no business in the money-saving index.
+      `content_hash` deliberately excludes `mock` (R3's formula), so a
+      recorded mock job would collide with a later *real* request for the
+      same image+service+jewelry_type and serve it the placeholder as a
+      `deduplicated` result. `app/api/v1/generate.py` additionally refuses
+      any dedupe hit whose `mock` doesn't match the request's, so a key
+      written before this guard existed can't leak either.
+    """
+    if status is not JobStatus.SUCCEEDED or mock:
         return
     ttl = ttl_seconds if ttl_seconds is not None else settings.dedupe_window_seconds
     await redis.set(_dedupe_key(content_hash_), job_id, ex=ttl)

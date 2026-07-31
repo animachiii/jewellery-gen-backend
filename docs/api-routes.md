@@ -64,6 +64,41 @@ Submit an image for generation. Returns immediately.
 
 ---
 
+### `POST /api/v1/classify-preview`
+
+**Showcase-UI-only. Not part of the frozen v1 job contract** — additive tooling, not something the Flutter ERP integration needs or should call. Lets a human confirm both `jewelry_type` and traditional/modern styling *before* a job (and its fixed `service`) is created. Does not create a job, does not touch Redis job state or Sheets, is not billable, and does not count against `DAILY_GENERATION_CAP`.
+
+**Auth:** client key
+**Content-Type:** `multipart/form-data`
+
+| Part | Type | Required | Notes |
+|------|------|----------|-------|
+| `image` | file | yes | Same validation as `POST /generate`: JPEG/PNG/WebP, ≤ `MAX_IMAGE_BYTES`, ≥ 256×256 |
+
+**200 OK**
+```json
+{
+  "is_jewelry": true,
+  "jewelry_type_predictions": [
+    { "jewelry_type": "NECKLACE", "confidence": 0.92 },
+    { "jewelry_type": "BRACELET", "confidence": 0.05 },
+    { "jewelry_type": "BANGLE", "confidence": 0.03 }
+  ],
+  "style_predictions": [
+    { "style": "TRADITIONAL", "confidence": 0.88 },
+    { "style": "MODERN", "confidence": 0.12 }
+  ]
+}
+```
+
+Once the human confirms a `jewelry_type` and a style (TRADITIONAL/MODERN) in the UI, the UI combines the confirmed style with the category it already knows (FEMALE_MODEL/MALE_MODEL/MANNEQUIN/PRODUCT_STYLING) to build the real `service` value, then calls `POST /generate` with that `service` and the confirmed `jewelry_type` explicit (R11: a client-supplied type is trusted, skipping re-classification and its cost).
+
+**Note:** unlike every other AI-backed route in this system, this one responds synchronously (~7-10s observed) rather than job+poll — see `app/api/v1/classify.py`'s module docstring for why that's a deliberate, narrowly-scoped exception to the async convention.
+
+**Errors:** 400 `INVALID_IMAGE` · 401 `UNAUTHORIZED` · 413 `IMAGE_TOO_LARGE` · 415 `UNSUPPORTED_FORMAT` · 422 `VALIDATION_ERROR` · 429 `RATE_LIMITED` · 502 `CLASSIFIER_ERROR`
+
+---
+
 ## Jobs
 
 ### `GET /api/v1/jobs/{job_id}`
@@ -184,6 +219,16 @@ Full job record including `prompt_snapshot`, `provider_job_id`, and `submission_
 
 **Auth:** admin key
 
+### `POST /api/v1/admin/keys/reload`
+
+**Phase 7.** Re-reads `API_KEYS` from the process environment and atomically swaps the in-memory client-key hash map `require_client_key` looks up on every request — so a client key can be added or revoked without restarting the API process. The deploy platform must update the `API_KEYS` env var and then call this route; the app does not poll for env changes on its own.
+
+Scoped to `API_KEYS` only — does **not** rotate `ADMIN_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GEMINI_API_KEY`, or `HIGGSFIELD_API_KEY` (those need a real process restart; see `docs/schema.md` §5's admin-key review for why the admin key specifically isn't hashed/rotatable the same way). API-process-only — the ARQ worker never checks client keys, so it has nothing to reload.
+
+**Auth:** admin key
+**200 OK** — `{ "keys_loaded": 2 }`
+**Errors:** 401 · 422 `VALIDATION_ERROR` (`API_KEYS` unset in the process environment)
+
 ---
 
 ## Health
@@ -192,23 +237,24 @@ Full job record including `prompt_snapshot`, `provider_job_id`, and `submission_
 Liveness. **No auth.** Returns 200 `{"status":"ok"}` if the process is up. Never touches a dependency — this is what the platform's healthcheck hits.
 
 ### `GET /health/deep`
-Readiness. **Admin key.** Checks Redis ping, Sheets read, Drive reachability, queue depth.
+Readiness. **Admin key.** Checks Redis ping, Sheets read, storage-adapter reachability, queue depth, and today's spend against the daily cap.
 
-> **Phase 1 status:** Redis is checked for real (`PING`, with latency). `sheets`/`drive`/`queue` are hardcoded `{"ok": true}` stubs (Sheets and Drive have no live-reachability check wired up yet; real queue-depth introspection is Phase 8) — enriched incrementally as those subsystems come online. Returns 503 only when the Redis check fails.
+> **Phase 8 status:** all four subsystem checks are real. `redis` — `PING` with latency. `sheets` — reuses the cached matrix-version mechanism (`app/services/matrix.py`), so a cache hit costs nothing and a cache miss is exactly the "is Sheets reachable" question this check answers. `storage` — a reachability probe through whichever `StorageAdapter` `STORAGE_BACKEND` currently resolves to (calls `exists()` with a sentinel ref that never exists — no file is ever uploaded/downloaded by this check). `queue` — real ARQ queue depth via a direct read of the `arq:queue` sorted set (`ZCARD`/`ZRANGE`), no ARQ-internal API needed. `spend` is not a pass/fail check — it surfaces `app/services/budget.py`'s existing `spend:{date}` counter against `DAILY_GENERATION_CAP` so an operator notices "180/200" before clients start seeing `429 BUDGET_EXCEEDED`. Only a Redis failure returns 503; a Sheets/storage blip degrades the response to `"degraded"` at 200 instead — a blip in either shouldn't make the platform's health-check restart an otherwise-fine process.
 
 ```json
 {
   "status": "degraded",
   "checks": {
     "redis": {"ok": true, "latency_ms": 2},
-    "sheets": {"ok": true, "matrix_rows": 48},
-    "drive": {"ok": false, "error": "quota exceeded"},
-    "queue": {"ok": true, "depth": 3, "oldest_job_age_s": 12}
+    "sheets": {"ok": true, "matrix_version": "047b0bc2a85cb9e7"},
+    "storage": {"ok": false, "backend": "supabase", "error": "quota exceeded"},
+    "queue": {"ok": true, "depth": 3, "oldest_job_age_s": 12},
+    "spend": {"today": 37, "cap": 200, "remaining": 163}
   }
 }
 ```
 
-200 when `ok`/`degraded`, 503 when any critical check fails.
+200 when `ok`/`degraded`, 503 when the Redis check fails.
 
 ---
 
@@ -217,6 +263,7 @@ Readiness. **Admin key.** Checks Redis ping, Sheets read, Drive reachability, qu
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | `/api/v1/generate` | client | Submit a job |
+| POST | `/api/v1/classify-preview` | client | Showcase-UI-only: preview jewelry_type + style before submitting |
 | GET | `/api/v1/jobs` | client | List recent jobs |
 | GET | `/api/v1/jobs/{id}` | client | Poll status |
 | GET | `/api/v1/jobs/{id}/assets/{index}` | client | Fetch output |
@@ -224,6 +271,7 @@ Readiness. **Admin key.** Checks Redis ping, Sheets read, Drive reachability, qu
 | GET | `/api/v1/matrix` | client | Available combinations |
 | POST | `/api/v1/admin/matrix/refresh` | admin | Force matrix reload |
 | GET | `/api/v1/admin/jobs/{id}` | admin | Full record |
+| POST | `/api/v1/admin/keys/reload` | admin | Reload `API_KEYS` without a restart |
 | GET | `/health` | none | Liveness |
 | GET | `/health/deep` | admin | Readiness |
 

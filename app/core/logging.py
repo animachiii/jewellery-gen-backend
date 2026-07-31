@@ -56,3 +56,10 @@ def bind_job(job_id: str) -> Iterator[None]:
         yield
     finally:
         _job_id_var.reset(token)
+
+
+def current_job_id() -> str | None:
+    """Public accessor for the job_id bound by bind_job(), if any -- lets
+    other modules (e.g. app/core/observability.py's Sentry scope) correlate
+    to the same job without reaching into the private contextvar directly."""
+    return _job_id_var.get()

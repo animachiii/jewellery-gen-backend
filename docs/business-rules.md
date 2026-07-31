@@ -33,6 +33,15 @@ content_hash = sha256(
 ```
 On submit, look up `dedupe:{content_hash}`. If it points at a `succeeded` job, return that `job_id` with `deduplicated: true`, `billable: false`, and generate nothing. Only `succeeded` jobs populate the dedupe key — failures must be retryable.
 
+**Mock jobs are excluded from dedupe entirely.** Note the hash above deliberately does *not* include `mock` — so a mock job and a real request for the same image/service/type collide on one key. Dedupe exists to avoid paying twice; a mock job costs nothing and produces a `FakeProvider` placeholder, so it must never satisfy a real request. Enforced in two places:
+
+- `app/services/dedupe.py`'s `record_dedupe(..., mock=...)` refuses to write a mock job's key.
+- `app/api/v1/generate.py` refuses any dedupe hit whose job's `mock` differs from the request's, so a key written before that guard existed still can't leak.
+
+Consequence: mock submits never dedupe against anything and always run fresh through the full state machine, which is what R6 wants anyway.
+
+> Regression origin: found in manual showcase-UI testing — unchecking `mock` kept returning the previous mock run's beige placeholder in ~10s instead of a real generation, because the real request hit the mock job's dedupe key.
+
 ### R4 — `Idempotency-Key` is honoured for 24 hours
 Scoped per API key. A replay returns the original `job_id` unchanged, even if the job failed. This is distinct from R3: R3 dedupes by *content*, R4 dedupes by *client intent*. Check R4 first.
 
@@ -41,6 +50,10 @@ Scoped per API key. A replay returns the original `job_id` unchanged, even if th
 
 ### R6 — Mock jobs never touch the provider
 `mock=true` routes to `FakeProvider`: ~10s simulated latency, a placeholder asset, full state machine traversal. It must never call Higgsfield, never increment spend, and must be visibly flagged `mock: true` in every response.
+
+A mock job's result must also never reach a real request via the dedupe path — see R3's "Mock jobs are excluded from dedupe entirely".
+
+**`PROVIDER=fake` is a second, deployment-level mock switch.** `get_provider()` resolves `FakeProvider` when *either* the per-job `mock` flag is true **or** `PROVIDER=fake` — so with `PROVIDER=fake` set, unchecking `mock` on a request still yields a placeholder. That's intended (it's the safety default while no real provider credential exists), but it is a distinct lever from the per-job flag and the two are easy to confuse when debugging "why is my real job returning a placeholder".
 
 ---
 
@@ -107,7 +120,15 @@ Jobs store `storage_ref` (a Drive file ID today), never a URL. Assets are served
 `REMOVE_BG`, `CHANGE_BG`, `MIX_PIECES` → 422 with a message naming them as not-yet-supported. Do not silently ignore or fall back to a v1 service.
 
 ### R20 — Rate limit
-`RATE_LIMIT_PER_MINUTE` (60) per API key per minute, fixed window. Applies to all `/api/v1` routes including polling — a client polling ten jobs at 5s intervals uses 120/min and **will** trip this. Document the recommended interval and consider a higher polling allowance if the client hits it in practice.
+**Resolved in Phase 7** with two separate fixed-window buckets per API key, each its own Redis counter (`ratelimit:{bucket}:{key}:{minute}`) so one never eats into the other's budget:
+
+- `RATE_LIMIT_PER_MINUTE` (60) — every `/api/v1` route **except** the single-job poll below. This includes `POST /generate` — previously a real gap: the route had no rate-limit dependency wired in at all (fixed in Phase 7; `app/api/v1/generate.py` now depends on `rate_limit` like every other client route).
+- `POLLING_RATE_LIMIT_PER_MINUTE` (180) — `GET /jobs/{job_id}` only, the documented hot, cheap, read-only path. 10 concurrent jobs polling at the recommended 5s interval is 120/min; 180 clears that with headroom for a few extra in-flight jobs, rather than leaving the tension undecided.
+
+`GET /jobs` (the list route), `GET /jobs/{id}/assets/{index}`, and `POST /jobs/{id}/resolve` stay on the default 60/min bucket — none of them are the repeated-polling hot path the way single-job status checks are.
+
+### R21 — CORS fails closed
+`CORS_ALLOWED_ORIGINS` (Phase 7) defaults to empty — no cross-origin access at all. A cross-origin client (a real Flutter web build, a separately-hosted showcase page) must be added to the list explicitly; there is no implicit same-origin assumption. `allow_credentials` is always `false` — auth is the `X-API-Key` header, not a cookie, so there is nothing for credentialed CORS to protect, and enabling it would only widen the attack surface for no benefit. Methods/headers exposed to cross-origin callers are the minimal set every route actually uses (`GET`/`POST`; `X-API-Key`, `Idempotency-Key`, `Content-Type`) — never wildcarded.
 
 ---
 

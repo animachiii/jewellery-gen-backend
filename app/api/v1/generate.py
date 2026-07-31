@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Request, status
 from PIL import Image, UnidentifiedImageError
 from redis.asyncio import Redis
 
-from app.api.deps import require_client_key
+from app.api.deps import rate_limit, require_client_key
 from app.api.errors import (
     BudgetExceededError,
     ImageTooLargeError,
@@ -138,9 +138,7 @@ def parse_service(raw: str) -> ServiceType:
             f"Unknown service '{raw}'. Valid v1 services are: {valid}."
         ) from exc
     if service in V2_SERVICES:
-        raise ValidationAppError(
-            f"Service '{raw}' is a v2 feature and is not yet supported in v1."
-        )
+        raise ValidationAppError(f"Service '{raw}' is a v2 feature and is not yet supported in v1.")
     return service
 
 
@@ -235,7 +233,9 @@ def _parse_mock(raw: bytes | None) -> bool:
 
 @router.post("/generate", status_code=status.HTTP_202_ACCEPTED, response_model=GenerateResponse)
 async def generate(
-    request: Request, key_name: str = Depends(require_client_key)
+    request: Request,
+    key_name: str = Depends(require_client_key),
+    _rate_limited: None = Depends(rate_limit),
 ) -> GenerateResponse:
     redis: Redis = request.app.state.redis
     content_type = request.headers.get("content-type", "")
@@ -287,11 +287,24 @@ async def generate(
     dedupe_job_id = await dedupe.check_dedupe(redis, content_hash)
     if dedupe_job_id is not None:
         dedupe_job = await get_job(redis, dedupe_job_id)
-        if dedupe_job is not None and dedupe_job.status.value == "succeeded":
+        if (
+            dedupe_job is not None
+            and dedupe_job.status.value == "succeeded"
+            and dedupe_job.mock == mock
+        ):
             return _to_response(dedupe_job, deduplicated=True)
         # A dedupe key pointing at a non-succeeded (or missing) job shouldn't
         # happen — record_dedupe only ever records succeeded jobs — but treat
         # defensively as a cache miss rather than trusting stale state.
+        #
+        # The `mock` equality check is load-bearing, not defensive: R3's
+        # content_hash deliberately excludes `mock`, so a mock job and a real
+        # request for the same image+service+jewelry_type hash identically.
+        # Without this, a prior mock run's FakeProvider placeholder is served
+        # back as `deduplicated: true` for a real, billable request — the
+        # client asks for a real generation and silently gets a fake asset in
+        # ~10s. record_dedupe now also refuses to write mock jobs, so this
+        # branch mainly catches keys written before that guard existed.
 
     billable = not mock
     if billable and not await check_budget(redis):

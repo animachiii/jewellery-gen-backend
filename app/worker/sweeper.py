@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from redis.asyncio import Redis
 
 from app.core.logging import get_logger
+from app.core.observability import capture_needs_review
 from app.core.state import transition
 from app.models.enums import ErrorCode, JobStatus
 from app.store import redis_store
@@ -31,6 +32,11 @@ async def sweep(
             updated = await transition(
                 job, JobStatus.NEEDS_REVIEW, error_code=ErrorCode.ORPHANED_SUBMIT
             )
+            # Phase 8 Step 3: NEEDS_REVIEW means money may have moved and
+            # nobody has confirmed what happened -- alert, unlike an
+            # ordinary FAILED terminal state (below), which is normal-
+            # operation noise, not an incident.
+            capture_needs_review(job.job_id, reason="deadline exceeded while submitting")
         else:
             updated = await transition(job, JobStatus.FAILED, error_code=ErrorCode.PROVIDER_TIMEOUT)
 

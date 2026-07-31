@@ -134,6 +134,52 @@ async def test_mock_job_reaches_succeeded_end_to_end(
     assert final.provider_job_id is not None
 
 
+async def test_poll_transient_failure_does_not_permanently_abandon_job(
+    redis: Redis, monkeypatch: MonkeyPatch
+) -> None:
+    """Regression test: a poll failure (after retry_free's own retries
+    exhaust) must not end the poll loop entirely — docs/ai-integration.md:
+    "Polling is free — retry it freely." Previously this `break`d out of
+    _poll on a single retry_free exhaustion, silently stranding the job in
+    `generating` until the sweeper reaped it as PROVIDER_TIMEOUT at
+    deadline_at, turning one transient network blip into a permanent stall.
+    Found via manual testing against the real Higgsfield MCP bridge."""
+    real_provider = FakeProvider(latency_seconds=0)
+    call_count = {"n": 0}
+
+    class _FlakyThenRecoveringProvider:
+        name = "flaky"
+
+        async def submit(self, req: object) -> object:
+            return await real_provider.submit(req)  # type: ignore[arg-type]
+
+        async def poll(self, provider_job_id: str) -> object:
+            call_count["n"] += 1
+            # retry_free makes 4 attempts per call (1 + 3 retries); fail all
+            # of them on the loop's first iteration so retry_free itself
+            # exhausts and raises, then succeed from the second iteration on.
+            if call_count["n"] <= 4:
+                raise RuntimeError("simulated transient poll failure")
+            return await real_provider.poll(provider_job_id)
+
+        async def fetch_assets(self, provider_job_id: str) -> object:
+            return await real_provider.fetch_assets(provider_job_id)
+
+    flaky = _FlakyThenRecoveringProvider()
+    monkeypatch.setattr("app.worker.tasks.get_provider", lambda mock: flaky)
+
+    job = await _make_job(redis, jewelry_type_requested=JewelryType.RING)
+    await redis_store.set_row_index(redis, job.job_id, 2)
+    client = FakeSheetsClient(rows=_matrix_rows())
+
+    await tasks.run_job_pipeline(_ctx(redis, client), job.job_id)
+
+    final = await redis_store.get_job(redis, job.job_id)
+    assert final is not None
+    assert final.status == JobStatus.SUCCEEDED
+    assert call_count["n"] > 4  # proves the loop kept polling past the failure
+
+
 async def test_classify_then_resolve_path_when_no_type_requested(
     redis: Redis, fake_provider: FakeProvider, monkeypatch: MonkeyPatch
 ) -> None:

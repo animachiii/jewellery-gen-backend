@@ -1,13 +1,15 @@
 # AI Integration
 
-Two AI calls exist in v1. Both sit behind adapters. Nothing else in the system may call a model directly.
+Two AI calls power the job pipeline in v1. Both sit behind adapters. Nothing in the job pipeline may call a model directly.
 
 | # | Purpose | Model | Trigger | Cost class |
 |---|---------|-------|---------|-----------|
 | 1 | Jewellery type classification | Gemini 3.1 Flash Lite | `jewelry_type` omitted on submit | cheap, retryable |
 | 2 | Image generation | Higgsfield (abstracted) | Every non-mock job | **expensive, never auto-retried** |
 
-**There is no third AI call.** In particular, no model rewrites, expands, or validates prompts — see business rule R7.
+**No model rewrites, expands, or validates prompts** — see business rule R7.
+
+**Showcase-UI-only exception:** `POST /api/v1/classify-preview` (`app/api/v1/classify.py`) makes a third, separate Gemini call — `GeminiClassifier.classify_with_style()`, §1a below — that additionally predicts TRADITIONAL/MODERN styling. It exists solely so the showcase page can show a human both predictions for confirmation *before* a job is created, since `service` (which encodes style) must be supplied at job-creation time and the job pipeline's own classify stage only runs after that. It is not part of the job pipeline, is never called by worker code, and the Flutter ERP integration has no reason to call it.
 
 ---
 
@@ -85,6 +87,39 @@ Threshold is `CLASSIFIER_CONFIDENCE_THRESHOLD`, tunable without a deploy.
 | Safety block | `failed`, `NOT_JEWELRY`, message notes the block |
 
 Persist `confidence` and the full `candidate_types` on the job **always** — including on success. It's the only way to tune the threshold later against real data.
+
+---
+
+## 1a. Classification preview (style-aware) — showcase UI only
+
+**Module:** `app/services/classifier.py`'s `GeminiClassifier.classify_with_style()`
+**Trigger:** `POST /api/v1/classify-preview` only (`docs/api-routes.md`). Never called by the worker pipeline.
+
+Same model (`settings.gemini_model`) and same `GeminiClassifier`/`self._client`, but its own system instruction (`STYLE_SYSTEM_INSTRUCTION`) and its own structured-output schema — kept fully separate from `SYSTEM_INSTRUCTION`/`_RESPONSE_SCHEMA` above, which stay byte-identical to §1's frozen contract (asserted directly in `tests/test_classifier.py`).
+
+### Output — structured, schema-enforced
+```json
+{
+  "is_jewelry": true,
+  "jewelry_type_predictions": [
+    { "jewelry_type": "NECKLACE", "confidence": 0.92 },
+    { "jewelry_type": "BRACELET", "confidence": 0.05 },
+    { "jewelry_type": "BANGLE", "confidence": 0.03 }
+  ],
+  "style_predictions": [
+    { "style": "TRADITIONAL", "confidence": 0.88 },
+    { "style": "MODERN", "confidence": 0.12 }
+  ]
+}
+```
+
+`style` is judged from the piece's own design language (antique/temple/filigree/ethnic motifs → TRADITIONAL; sleek/minimalist/contemporary → MODERN), explicitly not from any model, background, or styling in the photo — see `STYLE_SYSTEM_INSTRUCTION`'s verbatim rules in `app/services/classifier.py`.
+
+### Decision logic
+None — unlike §1's classify stage, there is no confidence threshold or `needs_input` branch here. Every result is shown to a human for confirmation regardless of confidence, which is the entire point of this route (see the conversation/session that added this: the showcase UI previously had no visibility into what Gemini classified before generating).
+
+### Failure handling
+Same shape as §1 (retry 3×, 2s/8s/30s, via `retry_free` at the route level — `app/api/v1/classify.py`'s `RETRY_DELAYS`), surfacing as `502 CLASSIFIER_ERROR` after retries exhaust, per `docs/api-routes.md`.
 
 ---
 

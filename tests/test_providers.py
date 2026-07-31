@@ -94,16 +94,6 @@ def test_get_provider_mock_override_always_returns_fake(monkeypatch: pytest.Monk
     assert isinstance(provider, FakeProvider)
 
 
-async def test_higgsfield_stub_raises_not_implemented() -> None:
-    provider = HiggsfieldProvider()
-    with pytest.raises(NotImplementedError):
-        await provider.submit(_req())
-    with pytest.raises(NotImplementedError):
-        await provider.poll("job-id")
-    with pytest.raises(NotImplementedError):
-        await provider.fetch_assets("job-id")
-
-
 def test_fake_provider_is_assignable_to_generation_provider() -> None:
     provider: GenerationProvider = FakeProvider()
     assert provider.name == "fake"

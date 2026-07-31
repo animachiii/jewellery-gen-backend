@@ -49,7 +49,7 @@ from google.genai._api_client import HttpOptions
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.models.enums import JewelryType
+from app.models.enums import JewelryType, Style
 
 log = get_logger(__name__)
 
@@ -104,11 +104,94 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
     "required": ["is_jewelry", "predictions"],
 }
 
+# --- Style-aware preview classification -------------------------------------
+#
+# Used only by the classify-preview route (app/api/v1/classify.py), which
+# lets the showcase UI ask "what jewelry_type and traditional/modern styling
+# is this?" and show both to a human for confirmation *before* a job (and its
+# fixed `service`) is ever created. This is a deliberately separate call from
+# the worker pipeline's classify() above -- SYSTEM_INSTRUCTION/_RESPONSE_SCHEMA
+# stay byte-identical to docs/ai-integration.md §1 (test_classifier.py asserts
+# this), so style prediction gets its own prompt/schema rather than mutating
+# the frozen one.
+STYLE_SYSTEM_INSTRUCTION = (
+    "You are a jewellery classification system for a product catalogue pipeline.\n"
+    "\n"
+    "Given a product photograph, identify the single jewellery type it depicts,\n"
+    "and judge whether it reads as TRADITIONAL or MODERN styling for a jewellery\n"
+    "marketing campaign.\n"
+    "\n"
+    "Rules:\n"
+    "- jewelry_type: choose only from the provided enum. Never invent a type.\n"
+    "- If the image contains no jewellery, set is_jewelry to false.\n"
+    "- If multiple pieces are present, classify the most prominent one.\n"
+    "- Judge jewelry_type by the physical form of the piece, not how it is worn.\n"
+    "- style: TRADITIONAL means antique/temple-style finish, intricate\n"
+    "  filigree, ethnic/heritage motifs (e.g. deities, peacocks, temple\n"
+    "  architecture), oxidised or antique-gold tone. MODERN means sleek,\n"
+    "  minimalist, contemporary lines, polished/bright finish, geometric or\n"
+    "  understated design. Judge from the piece's own design language, not\n"
+    "  from any model, background, or styling in the photo.\n"
+    "- Confidence must reflect genuine uncertainty for both jewelry_type and\n"
+    "  style. Do not default to high confidence.\n"
+    "\n"
+    "Return exactly three jewelry_type predictions ordered by descending\n"
+    "confidence, and exactly two style_predictions (one TRADITIONAL, one\n"
+    "MODERN) whose confidences describe how strongly the piece reads as each."
+)
+
+_STYLE_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "is_jewelry": {"type": "BOOLEAN"},
+        "jewelry_type_predictions": {
+            "type": "ARRAY",
+            "min_items": 3,
+            "max_items": 3,
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "jewelry_type": {"type": "STRING", "enum": [t.value for t in JewelryType]},
+                    "confidence": {"type": "NUMBER"},
+                },
+                "required": ["jewelry_type", "confidence"],
+            },
+        },
+        "style_predictions": {
+            "type": "ARRAY",
+            "min_items": 2,
+            "max_items": 2,
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "style": {"type": "STRING", "enum": [s.value for s in Style]},
+                    "confidence": {"type": "NUMBER"},
+                },
+                "required": ["style", "confidence"],
+            },
+        },
+    },
+    "required": ["is_jewelry", "jewelry_type_predictions", "style_predictions"],
+}
+
 
 @dataclass
 class Prediction:
     jewelry_type: JewelryType
     confidence: float
+
+
+@dataclass
+class StylePrediction:
+    style: Style
+    confidence: float
+
+
+@dataclass
+class TypeAndStyleResult:
+    is_jewelry: bool
+    predictions: list[Prediction]
+    style_predictions: list[StylePrediction]
 
 
 @dataclass
@@ -187,6 +270,104 @@ class GeminiClassifier:
             top_confidence=top_confidence,
         )
         return result
+
+    async def classify_with_style(self, image_bytes: bytes) -> TypeAndStyleResult:
+        """Preview-only classification for the classify-preview route: same
+        jewelry_type judgement as classify(), plus a TRADITIONAL/MODERN style
+        call so a human can confirm both before a job is ever created. Not
+        used by the worker pipeline. No retry layer here either -- the
+        route's caller wraps this in retry_free, same reasoning as classify()."""
+        start = time.monotonic()
+        model = settings.gemini_model
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=model,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=STYLE_SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json",
+                    response_schema=_STYLE_RESPONSE_SCHEMA,
+                ),
+            )
+            result = self._parse_style_response(response.text)
+        except Exception:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            log.warning(
+                "classifier.gemini.style_call_failed",
+                model=model,
+                latency_ms=latency_ms,
+            )
+            raise
+
+        latency_ms = int((time.monotonic() - start) * 1000)
+        top_confidence = result.predictions[0].confidence if result.predictions else None
+        top_style = result.style_predictions[0].style if result.style_predictions else None
+        log.info(
+            "classifier.gemini.style_call_completed",
+            model=model,
+            latency_ms=latency_ms,
+            outcome="is_jewelry" if result.is_jewelry else "not_jewelry",
+            top_confidence=top_confidence,
+            top_style=top_style.value if top_style else None,
+        )
+        return result
+
+    @staticmethod
+    def _parse_style_response(raw_text: str | None) -> TypeAndStyleResult:
+        """Same defensive parsing approach as _parse_response, extended for
+        the two style_predictions entries."""
+        if raw_text is None:
+            raise ValueError("classifier.gemini: empty response body")
+
+        try:
+            data = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("classifier.gemini: malformed JSON response") from exc
+
+        if (
+            not isinstance(data, dict)
+            or "is_jewelry" not in data
+            or "jewelry_type_predictions" not in data
+            or "style_predictions" not in data
+        ):
+            raise ValueError("classifier.gemini: schema-violating response")
+
+        valid_types = {t.value for t in JewelryType}
+        predictions: list[Prediction] = []
+        for entry in data["jewelry_type_predictions"]:
+            jewelry_type_raw = entry.get("jewelry_type")
+            if jewelry_type_raw not in valid_types:
+                continue
+            predictions.append(
+                Prediction(
+                    jewelry_type=JewelryType(jewelry_type_raw),
+                    confidence=float(entry["confidence"]),
+                )
+            )
+        if not predictions:
+            raise ValueError("classifier.gemini: no predictions with a valid jewelry_type")
+        predictions.sort(key=lambda p: p.confidence, reverse=True)
+
+        valid_styles = {s.value for s in Style}
+        style_predictions: list[StylePrediction] = []
+        for entry in data["style_predictions"]:
+            style_raw = entry.get("style")
+            if style_raw not in valid_styles:
+                continue
+            style_predictions.append(
+                StylePrediction(style=Style(style_raw), confidence=float(entry["confidence"]))
+            )
+        if not style_predictions:
+            raise ValueError("classifier.gemini: no style_predictions with a valid style")
+        style_predictions.sort(key=lambda p: p.confidence, reverse=True)
+
+        return TypeAndStyleResult(
+            is_jewelry=bool(data["is_jewelry"]),
+            predictions=predictions,
+            style_predictions=style_predictions,
+        )
 
     @staticmethod
     def _parse_response(raw_text: str | None) -> ClassificationResult:

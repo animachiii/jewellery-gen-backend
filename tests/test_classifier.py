@@ -16,14 +16,17 @@ from typing import Any
 
 import pytest
 
-from app.models.enums import JewelryType
+from app.models.enums import JewelryType, Style
 from app.services.classifier import (
+    STYLE_SYSTEM_INSTRUCTION,
     SYSTEM_INSTRUCTION,
     ClassificationResult,
     Classifier,
     GeminiClassifier,
     Prediction,
     StubClassifier,
+    StylePrediction,
+    TypeAndStyleResult,
     get_classifier,
 )
 
@@ -184,6 +187,84 @@ async def test_classify_raises_on_malformed_json() -> None:
 
     with pytest.raises(ValueError):
         await classifier.classify(b"fake-image-bytes")
+
+
+def _type_and_style_response(
+    is_jewelry: bool = True,
+    jewelry_type_predictions: list[dict[str, Any]] | None = None,
+    style_predictions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "is_jewelry": is_jewelry,
+        "jewelry_type_predictions": jewelry_type_predictions
+        or [
+            {"jewelry_type": "NECKLACE", "confidence": 0.92},
+            {"jewelry_type": "BRACELET", "confidence": 0.05},
+            {"jewelry_type": "BANGLE", "confidence": 0.03},
+        ],
+        "style_predictions": style_predictions
+        or [
+            {"style": "TRADITIONAL", "confidence": 0.88},
+            {"style": "MODERN", "confidence": 0.12},
+        ],
+    }
+
+
+async def test_classify_with_style_round_trips() -> None:
+    fake_client = _FakeGeminiClient(_type_and_style_response())
+    classifier = GeminiClassifier(client=fake_client)
+
+    result = await classifier.classify_with_style(b"fake-image-bytes")
+
+    assert isinstance(result, TypeAndStyleResult)
+    assert result.is_jewelry is True
+    assert result.predictions[0] == Prediction(jewelry_type=JewelryType.NECKLACE, confidence=0.92)
+    assert result.style_predictions[0] == StylePrediction(
+        style=Style.TRADITIONAL, confidence=0.88
+    )
+    assert result.style_predictions[1].style == Style.MODERN
+
+
+async def test_classify_with_style_sends_style_system_instruction() -> None:
+    fake_client = _FakeGeminiClient(_type_and_style_response())
+    classifier = GeminiClassifier(client=fake_client)
+
+    await classifier.classify_with_style(b"fake-image-bytes")
+
+    call = fake_client.models.calls[0]
+    assert call["config"].system_instruction == STYLE_SYSTEM_INSTRUCTION
+
+
+async def test_classify_with_style_sorts_style_predictions_descending() -> None:
+    fake_client = _FakeGeminiClient(
+        _type_and_style_response(
+            style_predictions=[
+                {"style": "MODERN", "confidence": 0.2},
+                {"style": "TRADITIONAL", "confidence": 0.8},
+            ]
+        )
+    )
+    classifier = GeminiClassifier(client=fake_client)
+
+    result = await classifier.classify_with_style(b"fake-image-bytes")
+
+    assert result.style_predictions[0].style == Style.TRADITIONAL
+    assert result.style_predictions[0].confidence == 0.8
+
+
+async def test_classify_with_style_raises_when_no_valid_style() -> None:
+    fake_client = _FakeGeminiClient(
+        _type_and_style_response(
+            style_predictions=[
+                {"style": "VINTAGE", "confidence": 0.5},
+                {"style": "FUTURISTIC", "confidence": 0.5},
+            ]
+        )
+    )
+    classifier = GeminiClassifier(client=fake_client)
+
+    with pytest.raises(ValueError):
+        await classifier.classify_with_style(b"fake-image-bytes")
 
 
 def test_get_classifier_returns_gemini_classifier_by_default() -> None:

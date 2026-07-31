@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jewellery Generation — Showcase</title>
+<style>
+  :root {
+    --bg: #faf8f5;
+    --panel: #ffffff;
+    --border: #e4ddd2;
+    --text: #2b2620;
+    --muted: #7a6f60;
+    --accent: #a8763e;
+    --accent-dark: #8a5f2f;
+    --ok: #3d7a4a;
+    --err: #a13a3a;
+    --warn: #b4841f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    gap: 20px;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+  }
+  section h2 { margin: 0 0 12px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  label { display: block; font-size: 13px; margin-bottom: 4px; color: var(--muted); }
+  input[type="text"], input[type="password"], input[type="file"], select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+    color: var(--text);
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; align-items: end; }
+  .field { margin-bottom: 12px; }
+  .checkbox-field { display: flex; align-items: center; gap: 8px; }
+  .checkbox-field input { width: auto; }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  button.secondary { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+  button.secondary:hover { background: #f5efe6; }
+  .status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .status-queued, .status-classifying, .status-resolving, .status-submitting,
+  .status-generating, .status-storing { background: #eef2fb; color: #35538c; }
+  .status-succeeded { background: #e6f4e8; color: var(--ok); }
+  .status-failed, .status-needs_review { background: #fbe9e9; color: var(--err); }
+  .status-needs_input { background: #fdf3df; color: var(--warn); }
+  .job-panel { display: none; }
+  .job-panel.visible { display: block; }
+  .error-box {
+    background: #fbe9e9;
+    border: 1px solid #f0c4c4;
+    color: var(--err);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+  .call-error {
+    background: #fbe9e9;
+    border: 1px solid #f0c4c4;
+    color: var(--err);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 8px;
+    display: none;
+  }
+  .call-error.visible { display: block; }
+  .assets { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+  .assets img { max-width: 220px; border-radius: 6px; border: 1px solid var(--border); }
+  .candidates { margin-top: 10px; }
+  .candidates ul { padding-left: 18px; margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  tr.job-row { cursor: pointer; }
+  tr.job-row:hover { background: #f5f1ea; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .field-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Jewellery Generation — Showcase</h1>
+  <p>Demo client for the API in docs/api-routes.md. Not the ERP integration — a minimal upload → poll → render page.</p>
+</header>
+
+<main>
+
+  <section>
+    <h2>Connection</h2>
+    <div class="row">
+      <div class="field">
+        <label for="base-url">API base URL</label>
+        <input type="text" id="base-url" value="http://localhost:8000" />
+      </div>
+      <div class="field">
+        <label for="api-key">API key (X-API-Key)</label>
+        <input type="password" id="api-key" placeholder="erp:changeme -> use the key part only" />
+      </div>
+    </div>
+    <div class="field-hint">Stored in this browser's localStorage for convenience. This is a local demo tool, not a public page — do not deploy this config bar publicly.</div>
+  </section>
+
+  <section>
+    <h2>1. Classify</h2>
+    <div class="row">
+      <div class="field">
+        <label for="image">Product photo</label>
+        <input type="file" id="image" accept="image/jpeg,image/png,image/webp" required />
+      </div>
+      <div class="field">
+        <label for="category">Output type</label>
+        <select id="category" required>
+          <option value="FEMALE_MODEL">Female model</option>
+          <option value="MALE_MODEL">Male model</option>
+          <option value="MANNEQUIN">Mannequin</option>
+          <option value="PRODUCT_STYLING">Product styling</option>
+        </select>
+      </div>
+    </div>
+    <button type="button" id="classify-btn">Classify</button>
+    <div class="call-error" id="classify-error"></div>
+  </section>
+
+  <section class="job-panel" id="confirm-panel">
+    <h2>2. Confirm &amp; generate</h2>
+    <div id="not-jewelry-warning" class="error-box" style="display:none">
+      Gemini did not detect jewellery in this image. You can still proceed, but the result is
+      likely to be wrong.
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="confirm-jewelry-type">
+          Jewelry type <span class="field-hint" id="jewelry-type-confidence"></span>
+        </label>
+        <select id="confirm-jewelry-type"></select>
+      </div>
+      <div class="field">
+        <label for="confirm-style">
+          Style <span class="field-hint" id="style-confidence"></span>
+        </label>
+        <select id="confirm-style">
+          <option value="TRADITIONAL">Traditional</option>
+          <option value="MODERN">Modern</option>
+        </select>
+      </div>
+    </div>
+    <div id="matrix-coverage-warning" class="error-box" style="display:none"></div>
+    <div class="row">
+      <div class="field">
+        <label class="checkbox-field" for="mock">
+          <input type="checkbox" id="mock" checked />
+          <span>mock (FakeProvider — no spend)</span>
+        </label>
+      </div>
+    </div>
+    <button type="button" id="confirm-generate-btn">Confirm &amp; Generate</button>
+    <button type="button" class="secondary" id="reclassify-btn">Start over</button>
+    <div class="call-error" id="generate-error"></div>
+  </section>
+
+  <section class="job-panel" id="job-panel">
+    <h2>Job <span id="job-id-label" class="muted"></span></h2>
+    <p><span class="status-badge" id="status-badge">—</span></p>
+
+    <div id="error-section" style="display:none">
+      <div class="error-box">
+        <strong id="error-code"></strong>
+        <div id="error-message"></div>
+      </div>
+    </div>
+
+    <div id="needs-input-section" style="display:none" class="candidates">
+      <p>Classification was ambiguous. Candidates:</p>
+      <ul id="candidate-list"></ul>
+      <div class="row3">
+        <div class="field">
+          <label for="resolve-type">Resolve as</label>
+          <select id="resolve-type"></select>
+        </div>
+        <button type="button" id="resolve-btn">Resolve &amp; resume</button>
+      </div>
+      <div class="call-error" id="resolve-error"></div>
+    </div>
+
+    <div id="assets-section" style="display:none">
+      <p class="muted">Generated assets:</p>
+      <div class="assets" id="assets-container"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recent jobs</h2>
+    <button type="button" class="secondary" id="refresh-jobs-btn">Refresh</button>
+    <div class="call-error" id="jobs-list-error"></div>
+    <table id="jobs-table">
+      <thead>
+        <tr><th>job_id</th><th>status</th><th>service</th><th>created_at</th></tr>
+      </thead>
+      <tbody id="jobs-tbody"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const TERMINAL_STATUSES = new Set(["succeeded", "failed", "needs_input", "needs_review"]);
+  const POLL_INTERVAL_MS = 5000; // docs/api-routes.md's recommended poll interval (R20)
+
+  const $ = (id) => document.getElementById(id);
+
+  const baseUrlInput = $("base-url");
+  const apiKeyInput = $("api-key");
+  baseUrlInput.value = localStorage.getItem("jgb_base_url") || baseUrlInput.value;
+  apiKeyInput.value = localStorage.getItem("jgb_api_key") || "";
+  baseUrlInput.addEventListener("change", () => localStorage.setItem("jgb_base_url", baseUrlInput.value));
+  apiKeyInput.addEventListener("change", () => localStorage.setItem("jgb_api_key", apiKeyInput.value));
+
+  function apiBase() {
+    return baseUrlInput.value.replace(/\/+$/, "");
+  }
+
+  function apiKey() {
+    return apiKeyInput.value.trim();
+  }
+
+  async function apiFetch(path, options) {
+    options = options || {};
+    const headers = Object.assign({}, options.headers || {}, { "X-API-Key": apiKey() });
+    const resp = await fetch(apiBase() + path, Object.assign({}, options, { headers }));
+    if (!resp.ok) {
+      let detail = resp.statusText;
+      try {
+        const body = await resp.json();
+        if (body && body.error) {
+          detail = body.error.code + ": " + body.error.message;
+        }
+      } catch (e) {
+        // response body wasn't JSON -- fall back to statusText
+      }
+      const err = new Error(detail);
+      err.status = resp.status;
+      throw err;
+    }
+    if (resp.status === 204) return null;
+    return resp.json();
+  }
+
+  function showCallError(el, err) {
+    el.textContent = "Request failed: " + err.message;
+    el.classList.add("visible");
+  }
+
+  function hideCallError(el) {
+    el.classList.remove("visible");
+    el.textContent = "";
+  }
+
+  // --- Matrix combinations, cached for the coverage warning in step 2 ---
+
+  let matrixCombinations = []; // [{jewelry_type, service}, ...]
+
+  async function loadMatrix() {
+    try {
+      const matrix = await apiFetch("/api/v1/matrix");
+      matrixCombinations = matrix.combinations || [];
+    } catch (err) {
+      matrixCombinations = [];
+    }
+  }
+
+  function hasMatrixCoverage(jewelryType, service) {
+    return matrixCombinations.some(
+      (c) => c.jewelry_type === jewelryType && c.service === service
+    );
+  }
+
+  // --- Step 1: Classify ---------------------------------------------------
+
+  let pollTimer = null;
+  let lastClassification = null; // {is_jewelry, jewelry_type_predictions, style_predictions}
+
+  function updateMatrixCoverageWarning() {
+    const category = $("category").value;
+    const style = $("confirm-style").value;
+    const jewelryType = $("confirm-jewelry-type").value;
+    const service = category + "_" + style;
+    const warningEl = $("matrix-coverage-warning");
+    if (jewelryType && !hasMatrixCoverage(jewelryType, service)) {
+      warningEl.textContent =
+        "No prompt variants found for " + jewelryType + " × " + service +
+        " in the current matrix -- generating will likely fail with MATRIX_MISS.";
+      warningEl.style.display = "block";
+    } else {
+      warningEl.style.display = "none";
+    }
+  }
+
+  $("classify-btn").addEventListener("click", async function () {
+    const errorEl = $("classify-error");
+    hideCallError(errorEl);
+    const fileInput = $("image");
+    if (!fileInput.files.length) {
+      showCallError(errorEl, new Error("Choose a product photo first."));
+      return;
+    }
+
+    const form = new FormData();
+    form.append("image", fileInput.files[0]);
+
+    const btn = $("classify-btn");
+    btn.disabled = true;
+    btn.textContent = "Classifying… (~10s)";
+    try {
+      const result = await apiFetch("/api/v1/classify-preview", { method: "POST", body: form });
+      lastClassification = result;
+      renderConfirmPanel(result);
+    } catch (err) {
+      showCallError(errorEl, err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Classify";
+    }
+  });
+
+  function renderConfirmPanel(result) {
+    $("not-jewelry-warning").style.display = result.is_jewelry ? "none" : "block";
+
+    const typeSelect = $("confirm-jewelry-type");
+    typeSelect.innerHTML = "";
+    result.jewelry_type_predictions.forEach((p, i) => {
+      const opt = document.createElement("option");
+      opt.value = p.jewelry_type;
+      opt.textContent = p.jewelry_type + " (" + (p.confidence * 100).toFixed(1) + "%)";
+      if (i === 0) opt.selected = true;
+      typeSelect.appendChild(opt);
+    });
+    $("jewelry-type-confidence").textContent =
+      "top prediction: " + (result.jewelry_type_predictions[0].confidence * 100).toFixed(1) + "%";
+
+    const styleSelect = $("confirm-style");
+    const topStyle = result.style_predictions[0];
+    styleSelect.value = topStyle.style;
+    $("style-confidence").textContent =
+      topStyle.style + " " + (topStyle.confidence * 100).toFixed(1) + "% confident";
+
+    updateMatrixCoverageWarning();
+    $("confirm-panel").classList.add("visible");
+  }
+
+  $("confirm-jewelry-type").addEventListener("change", updateMatrixCoverageWarning);
+  $("confirm-style").addEventListener("change", updateMatrixCoverageWarning);
+  $("category").addEventListener("change", updateMatrixCoverageWarning);
+
+  $("reclassify-btn").addEventListener("click", function () {
+    $("confirm-panel").classList.remove("visible");
+    lastClassification = null;
+    $("image").value = "";
+    hideCallError($("classify-error"));
+    hideCallError($("generate-error"));
+  });
+
+  // --- Step 2: Confirm & generate ------------------------------------------
+
+  $("confirm-generate-btn").addEventListener("click", async function () {
+    const errorEl = $("generate-error");
+    hideCallError(errorEl);
+
+    const fileInput = $("image");
+    if (!fileInput.files.length) {
+      showCallError(errorEl, new Error("Product photo is missing -- start over."));
+      return;
+    }
+
+    const category = $("category").value;
+    const style = $("confirm-style").value;
+    const jewelryType = $("confirm-jewelry-type").value;
+    const service = category + "_" + style;
+    const mock = $("mock").checked;
+
+    const form = new FormData();
+    form.append("image", fileInput.files[0]);
+    form.append("service", service);
+    form.append("jewelry_type", jewelryType); // confirmed by a human -- R11 skips re-classification
+    form.append("mock", mock ? "true" : "false");
+
+    const btn = $("confirm-generate-btn");
+    btn.disabled = true;
+    try {
+      const result = await apiFetch("/api/v1/generate", { method: "POST", body: form });
+      startTrackingJob(result.job_id);
+      refreshJobsList();
+    } catch (err) {
+      showCallError(errorEl, err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // --- Job tracking / polling -------------------------------------------
+
+  function startTrackingJob(jobId) {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    $("job-panel").classList.add("visible");
+    $("job-id-label").textContent = jobId;
+    resetJobPanel();
+
+    pollJob(jobId);
+    pollTimer = setInterval(() => pollJob(jobId), POLL_INTERVAL_MS);
+  }
+
+  function resetJobPanel() {
+    $("error-section").style.display = "none";
+    $("needs-input-section").style.display = "none";
+    $("assets-section").style.display = "none";
+    $("assets-container").innerHTML = "";
+    $("candidate-list").innerHTML = "";
+  }
+
+  async function pollJob(jobId) {
+    let job;
+    try {
+      job = await apiFetch("/api/v1/jobs/" + jobId);
+    } catch (err) {
+      // A transient poll failure shouldn't kill the interval -- just show
+      // it and try again next tick, unless the job is genuinely gone.
+      if (err.status === 404 || err.status === 410) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      $("status-badge").textContent = "poll error: " + err.message;
+      return;
+    }
+
+    renderJob(job);
+
+    if (TERMINAL_STATUSES.has(job.status) && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      refreshJobsList();
+    }
+  }
+
+  function renderJob(job) {
+    const badge = $("status-badge");
+    badge.textContent = job.status;
+    badge.className = "status-badge status-" + job.status;
+
+    resetJobPanel();
+
+    if (job.status === "failed" || job.status === "needs_review") {
+      $("error-section").style.display = "block";
+      $("error-code").textContent = job.error ? job.error.code : "UNKNOWN";
+      $("error-message").textContent = job.error ? job.error.message : "";
+    }
+
+    if (job.status === "needs_input" && job.candidate_types) {
+      $("needs-input-section").style.display = "block";
+      const list = $("candidate-list");
+      const select = $("resolve-type");
+      select.innerHTML = "";
+      job.candidate_types.forEach((c) => {
+        const li = document.createElement("li");
+        li.textContent = c.jewelry_type + " — " + (c.confidence * 100).toFixed(1) + "%";
+        list.appendChild(li);
+        const opt = document.createElement("option");
+        opt.value = c.jewelry_type;
+        opt.textContent = c.jewelry_type;
+        select.appendChild(opt);
+      });
+      $("resolve-btn").onclick = () => resolveJob(job.job_id);
+    }
+
+    if (job.status === "succeeded" && job.assets && job.assets.length) {
+      $("assets-section").style.display = "block";
+      const container = $("assets-container");
+      container.innerHTML = "";
+      job.assets.forEach((asset) => renderAsset(job.job_id, asset, container));
+    }
+  }
+
+  async function renderAsset(jobId, asset, container) {
+    try {
+      const resp = await fetch(apiBase() + asset.url, { headers: { "X-API-Key": apiKey() } });
+      if (!resp.ok) throw new Error("asset fetch failed: " + resp.status);
+      const blob = await resp.blob();
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(blob);
+      img.alt = "asset " + asset.index;
+      container.appendChild(img);
+    } catch (err) {
+      const span = document.createElement("div");
+      span.className = "error-box";
+      span.textContent = "Could not load asset " + asset.index + ": " + err.message;
+      container.appendChild(span);
+    }
+  }
+
+  async function resolveJob(jobId) {
+    const errorEl = $("resolve-error");
+    hideCallError(errorEl);
+    const chosen = $("resolve-type").value;
+    try {
+      const job = await apiFetch("/api/v1/jobs/" + jobId + "/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jewelry_type: chosen }),
+      });
+      renderJob(job);
+      if (!TERMINAL_STATUSES.has(job.status)) {
+        pollTimer = setInterval(() => pollJob(jobId), POLL_INTERVAL_MS);
+      }
+    } catch (err) {
+      showCallError(errorEl, err);
+    }
+  }
+
+  // --- Job history --------------------------------------------------------
+
+  async function refreshJobsList() {
+    const errorEl = $("jobs-list-error");
+    hideCallError(errorEl);
+    const tbody = $("jobs-tbody");
+    try {
+      const result = await apiFetch("/api/v1/jobs?limit=20");
+      tbody.innerHTML = "";
+      result.jobs.forEach((job) => {
+        const tr = document.createElement("tr");
+        tr.className = "job-row";
+        tr.innerHTML =
+          "<td>" + job.job_id.slice(0, 8) + "…</td>" +
+          "<td><span class=\"status-badge status-" + job.status + "\">" + job.status + "</span></td>" +
+          "<td>" + job.service + "</td>" +
+          "<td>" + job.created_at + "</td>";
+        tr.addEventListener("click", () => startTrackingJob(job.job_id));
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      showCallError(errorEl, err);
+    }
+  }
+
+  $("refresh-jobs-btn").addEventListener("click", refreshJobsList);
+
+  // --- Init -----------------------------------------------------------
+
+  loadMatrix();
+  refreshJobsList();
+})();
+</script>
+
+</body>
+</html>

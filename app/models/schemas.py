@@ -9,7 +9,7 @@ a `Job` pass those strings straight through rather than re-parsing/re-formatting
 
 from pydantic import BaseModel
 
-from app.models.enums import JewelryType, JobStatus, ServiceType
+from app.models.enums import JewelryType, JobStatus, ServiceType, Style
 
 
 class AssetRef(BaseModel):
@@ -21,6 +21,22 @@ class AssetRef(BaseModel):
 class CandidateType(BaseModel):
     jewelry_type: JewelryType
     confidence: float
+
+
+class StyleCandidate(BaseModel):
+    style: Style
+    confidence: float
+
+
+class ClassifyPreviewResponse(BaseModel):
+    """POST /api/v1/classify-preview — showcase-UI-only, not part of the
+    frozen v1 job contract (docs/api-routes.md). Lets a human confirm both
+    jewelry_type and traditional/modern styling before a job (and its fixed
+    `service`) is created; see app/api/v1/classify.py."""
+
+    is_jewelry: bool
+    jewelry_type_predictions: list[CandidateType]
+    style_predictions: list[StyleCandidate]
 
 
 class ErrorDetail(BaseModel):

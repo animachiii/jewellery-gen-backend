@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from redis.asyncio import Redis
 
-from app.api.deps import load_owned_job, rate_limit, require_client_key
+from app.api.deps import load_owned_job, poll_rate_limit, rate_limit, require_client_key
 from app.api.errors import JobNotResolvableError, NotFoundError, StorageError
 from app.core.state import transition
 from app.models.enums import JobStatus, TypeSource
@@ -40,6 +40,7 @@ from app.storage.base import StorageAdapter
 from app.storage.drive import DriveStorageError
 from app.storage.factory import get_storage_adapter
 from app.storage.local import StorageRefNotFoundError
+from app.storage.supabase import SupabaseStorageError
 from app.store.redis_store import list_recent, update_job
 
 router = APIRouter()
@@ -73,7 +74,10 @@ def _job_to_response(job: Job) -> JobResponse:
         ]
 
     error: ErrorDetail | None = None
-    if job.status in (JobStatus.FAILED, JobStatus.NEEDS_REVIEW) and job.error_code is not None:
+    if (
+        job.status in (JobStatus.FAILED, JobStatus.NEEDS_REVIEW, JobStatus.NEEDS_INPUT)
+        and job.error_code is not None
+    ):
         error = ErrorDetail(
             code=job.error_code.value, message=job.error_message or "", job_id=job.job_id
         )
@@ -99,7 +103,7 @@ def _job_to_response(job: Job) -> JobResponse:
 @router.get("/jobs/{job_id}", response_model=JobResponse)
 async def get_job_route(
     job: Annotated[Job, Depends(load_owned_job)],
-    _rate_limited: Annotated[None, Depends(rate_limit)],
+    _rate_limited: Annotated[None, Depends(poll_rate_limit)],
 ) -> JobResponse:
     return _job_to_response(job)
 
@@ -133,7 +137,7 @@ async def get_job_asset_route(
     storage: StorageAdapter = get_storage_adapter()
     try:
         data, mime = await storage.get(job.asset_refs[index])
-    except (StorageRefNotFoundError, DriveStorageError) as exc:
+    except (StorageRefNotFoundError, DriveStorageError, SupabaseStorageError) as exc:
         raise StorageError("Stored asset could not be retrieved.") from exc
 
     return Response(

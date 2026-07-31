@@ -29,6 +29,7 @@ jewellery-gen-backend/
 │   │   ├── errors.py           # exception handlers, error envelope
 │   │   └── v1/
 │   │       ├── generate.py     # POST /generate
+│   │       ├── classify.py     # POST /classify-preview — showcase-UI-only, see docs/ai-integration.md §1a
 │   │       ├── jobs.py         # GET /jobs, /jobs/{id}, assets, resolve
 │   │       ├── matrix.py       # GET /matrix
 │   │       └── admin.py        # admin-only routes

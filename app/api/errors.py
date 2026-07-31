@@ -5,11 +5,13 @@ HTTPException directly. Raise an AppError (or a subclass) instead; the handlers
 registered here convert it into the standard envelope from docs/api-routes.md.
 """
 
+import sentry_sdk
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.logging import get_logger
+from app.core.observability import bind_sentry_job_scope
 from app.models.enums import ErrorCode
 
 log = get_logger(__name__)
@@ -208,6 +210,15 @@ def register_error_handlers(app: FastAPI) -> None:
             request_id=_request_id(request),
             path=request.url.path,
         )
+        # Phase 8: only a genuinely unhandled exception (this catch-all, the
+        # 500 INTERNAL_ERROR path) is reported to Sentry. AppError subclasses
+        # and RequestValidationError are expected, typed, already-logged
+        # business outcomes (a 404, a 422, a MATRIX_MISS) -- reporting every
+        # 4xx would blow through the free tier's event quota on ordinary
+        # traffic and bury the signal that actually matters. No-op if Sentry
+        # isn't configured (docs/schema.md §6 -- SENTRY_DSN is optional).
+        bind_sentry_job_scope()
+        sentry_sdk.capture_exception(exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=_envelope(

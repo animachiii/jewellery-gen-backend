@@ -733,7 +733,8 @@
     },
     "/api/v1/admin/matrix/refresh": {
       "post": {
-        "operationId": "refresh_matrix_api_v1_admin_matrix_refresh_post",
+        "description": "Forces an immediate re-read of Sheet1, bypassing MATRIX_CACHE_TTL\n(docs/api-routes.md).",
+        "operationId": "refresh_matrix_route_api_v1_admin_matrix_refresh_post",
         "responses": {
           "200": {
             "content": {
@@ -746,7 +747,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Refresh Matrix"
+        "summary": "Refresh Matrix Route"
       }
     },
     "/api/v1/generate": {

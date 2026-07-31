@@ -36,16 +36,41 @@ async def require_admin_key(request: Request) -> None:
         raise UnauthorizedError("Invalid admin API key.")
 
 
-async def rate_limit(
-    request: Request, key_name: str = Depends(require_client_key)
+async def _check_rate_limit(
+    request: Request, key_name: str, *, bucket: str, limit_per_minute: int
 ) -> None:
+    """Shared fixed-window rate-limit check. `bucket` namespaces the Redis
+    key so the polling-path limit and the default limit never share a
+    counter — a client hitting the generous polling limit must not eat into
+    their budget for POST /generate, and vice versa (Phase 7 Step 5)."""
     redis = _get_redis(request)
     minute = datetime.now(UTC).strftime("%Y%m%d%H%M")
-    key = f"ratelimit:{key_name}:{minute}"
+    key = f"ratelimit:{bucket}:{key_name}:{minute}"
     count = await redis.incr(key)
     await redis.expire(key, RATE_LIMIT_KEY_TTL_SECONDS)
-    if count > settings.rate_limit_per_minute:
+    if count > limit_per_minute:
         raise RateLimitedError("Rate limit exceeded for this API key.")
+
+
+async def rate_limit(request: Request, key_name: str = Depends(require_client_key)) -> None:
+    """Default limit (`RATE_LIMIT_PER_MINUTE`) — applies to every `/api/v1`
+    route except the single-job poll (see `poll_rate_limit` below)."""
+    await _check_rate_limit(
+        request, key_name, bucket="default", limit_per_minute=settings.rate_limit_per_minute
+    )
+
+
+async def poll_rate_limit(request: Request, key_name: str = Depends(require_client_key)) -> None:
+    """Generous limit (`POLLING_RATE_LIMIT_PER_MINUTE`) for `GET
+    /jobs/{job_id}` only — docs/api-routes.md's documented hot, cheap,
+    read-only path. Resolves R20's tension between the recommended 5s poll
+    interval and the default 60/min limit tripping at ~10 concurrent jobs."""
+    await _check_rate_limit(
+        request,
+        key_name,
+        bucket="poll",
+        limit_per_minute=settings.polling_rate_limit_per_minute,
+    )
 
 
 async def load_owned_job(

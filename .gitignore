@@ -9,9 +9,13 @@ __pycache__/
 .ruff_cache/
 ui/assets/
 .venv/
+.venv-mcp-prototype/
 venv/
 *.egg-info/
 dist/
 build/
 .DS_Store
 data/
+.claude/
+.coverage
+scripts/higgsfield_mcp_prototype/.higgsfield_mcp_token.json

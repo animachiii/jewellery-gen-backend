@@ -16,15 +16,18 @@ dependencies = [
     "google-auth==2.37.0",
     "google-genai==0.3.0",
     "pillow==11.1.0",
-    "python-multipart==0.0.20",
+    "python-multipart==0.0.31",
+    "sentry-sdk[fastapi]==2.19.2",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest==8.3.4",
     "pytest-asyncio==0.25.2",
+    "pytest-cov==6.0.0",
     "ruff==0.8.6",
     "mypy==1.14.1",
+    "pip-audit==2.7.3",
 ]
 
 [tool.ruff]
@@ -45,6 +48,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "e2e: cross-phase pipeline tests driving real routes + worker stages together (slower than a unit test, still offline/FakeProvider-only)",
+]
 
 [build-system]
 requires = ["setuptools>=69"]

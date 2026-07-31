@@ -48,7 +48,8 @@ async def test_get_unknown_ref_raises_without_leaking_path(storage: LocalStorage
     assert str(storage._base_dir) not in str(exc_info.value)
 
 
-async def test_get_storage_adapter_returns_local_storage() -> None:
+async def test_get_storage_adapter_returns_local_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "storage_backend", "local")
     adapter = get_storage_adapter()
     assert isinstance(adapter, LocalStorage)
 

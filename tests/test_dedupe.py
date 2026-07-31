@@ -46,6 +46,23 @@ async def test_record_dedupe_records_succeeded_job(redis: Redis) -> None:
     assert await dedupe.check_dedupe(redis, "hash-1") == "job-1"
 
 
+async def test_record_dedupe_noops_for_mock_job(redis: Redis) -> None:
+    """R6 money-path regression: a mock job never touches the provider and is
+    never billable, so it must stay entirely outside the dedupe index.
+    `content_hash` deliberately excludes `mock` (R3), so a recorded mock job
+    collides with a later *real* request for the same image+service+type and
+    would serve that request FakeProvider's placeholder as a `deduplicated`
+    result. Found in manual testing: unchecking `mock` in the showcase UI kept
+    returning the previous mock run's beige placeholder in ~10s."""
+    await dedupe.record_dedupe(redis, "hash-mock", "job-mock", JobStatus.SUCCEEDED, mock=True)
+    assert await dedupe.check_dedupe(redis, "hash-mock") is None
+
+
+async def test_record_dedupe_records_real_job_when_mock_flag_false(redis: Redis) -> None:
+    await dedupe.record_dedupe(redis, "hash-real", "job-real", JobStatus.SUCCEEDED, mock=False)
+    assert await dedupe.check_dedupe(redis, "hash-real") == "job-real"
+
+
 async def test_check_dedupe_returns_none_after_ttl_expires(redis: Redis) -> None:
     await dedupe.record_dedupe(redis, "hash-1", "job-1", JobStatus.SUCCEEDED, ttl_seconds=1)
     assert await dedupe.check_dedupe(redis, "hash-1") == "job-1"

@@ -1,6 +1,8 @@
 import secrets
+from collections.abc import Iterator
 
 import pytest
+import sentry_sdk
 from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
@@ -135,3 +137,50 @@ async def test_unhandled_exception_returns_500_with_no_internal_detail(
     assert body["error"]["message"] == "An internal error occurred."
     assert "something broke internally" not in resp.text
     assert "ValueError" not in resp.text
+
+
+@pytest.fixture
+def sentry_capture_count() -> Iterator[list[int]]:
+    """Phase 8 Step 2 -- initializes a real Sentry client against a fake DSN
+    with a `before_send` hook that counts capture calls and suppresses the
+    actual send (returning None), so no test ever makes a real network call
+    to sentry.io (docs/conventions.md -> Testing) while still exercising the
+    real `sentry_sdk.capture_exception` call site end-to-end."""
+    counts = [0]
+
+    def _before_send(event: object, hint: object) -> None:
+        counts[0] += 1
+        return None
+
+    sentry_sdk.init(
+        dsn="https://fake_public_key@fake.ingest.sentry.io/123456",
+        before_send=_before_send,
+    )
+    try:
+        yield counts
+    finally:
+        sentry_sdk.get_global_scope().set_client(None)
+
+
+async def test_unhandled_exception_is_captured_by_sentry_exactly_once(
+    client: AsyncClient, sentry_capture_count: list[int]
+) -> None:
+    resp = await client.get("/crash")
+    assert resp.status_code == 500
+    assert sentry_capture_count == [1]
+
+
+async def test_app_error_is_never_captured_by_sentry(
+    client: AsyncClient, sentry_capture_count: list[int]
+) -> None:
+    resp = await client.get("/not-found")
+    assert resp.status_code == 404
+    assert sentry_capture_count == [0]
+
+
+async def test_validation_error_is_never_captured_by_sentry(
+    client: AsyncClient, sentry_capture_count: list[int]
+) -> None:
+    resp = await client.post("/validate", json={"not_name": 1})
+    assert resp.status_code == 422
+    assert sentry_capture_count == [0]

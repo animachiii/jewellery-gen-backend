@@ -4,6 +4,7 @@ from redis.asyncio import Redis
 
 from app.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.core.observability import init_sentry
 from app.store.rehydrate import rehydrate
 from app.store.sheets_store import GoogleSheetsClient, SheetsClient
 from app.worker.sweeper import sweep
@@ -24,6 +25,7 @@ def _build_sheets_client() -> SheetsClient | None:
 
 async def on_startup(ctx: dict[str, object]) -> None:
     configure_logging()
+    init_sentry()
     redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
     ctx["app_redis"] = redis
     sheets_client = _build_sheets_client()
@@ -61,5 +63,12 @@ class WorkerSettings:
     cron_jobs: list[object] = [cron(sweep_cron, second=0, run_at_startup=False)]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = settings.worker_concurrency
+    # ARQ's own default job_timeout is 300s -- far short of JOB_DEADLINE_SECONDS
+    # (900s default). A job whose GENERATING poll loop is still legitimately
+    # running past 300s would get forcibly killed by ARQ itself before our
+    # own deadline_at-bounded poll loop (app/worker/tasks.py) ever got a
+    # chance to time it out cleanly. +30s buffer over the deadline so our own
+    # deadline check is always the one that fires first.
+    job_timeout = settings.job_deadline_seconds + 30
     on_startup = on_startup
     on_shutdown = on_shutdown

@@ -8,13 +8,16 @@ from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 
 import app.api.v1.jobs as jobs_module
+from app.config import settings
 from app.main import app
 from app.models.enums import ErrorCode, JobStatus, ServiceType, TypeSource
 from app.models.job import Job
 from app.storage.drive import DriveStorage
 from app.storage.factory import get_storage_adapter
+from app.storage.supabase import SupabaseStorage
 from app.store.redis_store import create_job, get_job
 from tests.fakes.fake_drive_client import FakeDriveClient
+from tests.fakes.fake_supabase_client import FakeSupabaseStorageClient
 
 # Retry delays for Drive-backed tests must be fast — the real factory's
 # DEFAULT_DELAYS (2s/8s/30s) would make a retry-exhaustion test take ~40s.
@@ -320,8 +323,9 @@ async def test_fetch_asset_on_non_succeeded_job_returns_404(
 
 
 async def test_fetch_asset_missing_storage_file_returns_502(
-    client: AsyncClient, redis: Redis
+    client: AsyncClient, redis: Redis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings, "storage_backend", "local")
     job = _make_job(
         job_id="job-broken-asset", status=JobStatus.SUCCEEDED, asset_refs=["nonexistent-ref"]
     )
@@ -375,6 +379,35 @@ async def test_fetch_asset_drive_quota_exhaustion_returns_502(
     fake_drive.fail_mode = "quota"
     fake_drive.fail_remaining = -1
     monkeypatch.setattr(jobs_module, "get_storage_adapter", lambda: drive_storage)
+
+    async with client as ac:
+        resp = await ac.get(
+            f"/api/v1/jobs/{job.job_id}/assets/0", headers={"X-API-Key": CLIENT_KEY}
+        )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "STORAGE_ERROR"
+
+
+async def test_fetch_asset_supabase_missing_ref_returns_502(
+    client: AsyncClient, redis: Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test: SupabaseStorage.get() raises SupabaseStorageError
+    (not StorageRefNotFoundError/DriveStorageError), which the route's except
+    clause did not catch until this was fixed -- a missing/expired asset on
+    the actual active production backend (claude.md: "supabase.py — active
+    backend") surfaced as an unhandled 500 instead of the documented 502
+    STORAGE_ERROR. Found via manual testing once STORAGE_BACKEND=supabase was
+    actually exercised for the first time."""
+    fake_client = FakeSupabaseStorageClient()
+    supabase_storage = SupabaseStorage(fake_client, bucket="test-bucket")
+    monkeypatch.setattr(jobs_module, "get_storage_adapter", lambda: supabase_storage)
+
+    job = _make_job(
+        job_id="job-supabase-missing-asset",
+        status=JobStatus.SUCCEEDED,
+        asset_refs=["nonexistent-ref"],
+    )
+    await create_job(redis, job)
 
     async with client as ac:
         resp = await ac.get(

@@ -1,5 +1,8 @@
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
+import pytest
+import sentry_sdk
 from redis.asyncio import Redis
 
 from app.models.enums import ErrorCode, JobStatus, ServiceType
@@ -33,6 +36,27 @@ def _make_job(job_id: str, status: JobStatus, deadline_at: datetime) -> Job:
     )
 
 
+@pytest.fixture
+def sentry_capture_count() -> Iterator[list[int]]:
+    """Phase 8 Step 3 -- same pattern as tests/test_errors.py: a real Sentry
+    client against a fake DSN, `before_send` counts and suppresses sends so
+    nothing reaches sentry.io (docs/conventions.md -> Testing)."""
+    counts = [0]
+
+    def _before_send(event: object, hint: object) -> None:
+        counts[0] += 1
+        return None
+
+    sentry_sdk.init(
+        dsn="https://fake_public_key@fake.ingest.sentry.io/123456",
+        before_send=_before_send,
+    )
+    try:
+        yield counts
+    finally:
+        sentry_sdk.get_global_scope().set_client(None)
+
+
 async def test_generating_past_deadline_becomes_failed_provider_timeout(redis: Redis) -> None:
     past = datetime.now(UTC) - timedelta(seconds=10)
     job = _make_job("job-1", JobStatus.GENERATING, past)
@@ -59,6 +83,32 @@ async def test_submitting_past_deadline_becomes_needs_review_not_failed(redis: R
     assert updated is not None
     assert updated.status == JobStatus.NEEDS_REVIEW
     assert updated.error_code == ErrorCode.ORPHANED_SUBMIT
+
+
+async def test_needs_review_sweep_triggers_a_sentry_alert(
+    redis: Redis, sentry_capture_count: list[int]
+) -> None:
+    past = datetime.now(UTC) - timedelta(seconds=10)
+    job = _make_job("job-alert", JobStatus.SUBMITTING, past)
+    await redis_store.create_job(redis, job)
+
+    await sweep(redis, None, SHEET_ID, TAB)
+
+    assert sentry_capture_count == [1]
+
+
+async def test_ordinary_failed_sweep_does_not_trigger_a_sentry_alert(
+    redis: Redis, sentry_capture_count: list[int]
+) -> None:
+    """A genuine PROVIDER_TIMEOUT is normal-operation noise, not an incident
+    -- only NEEDS_REVIEW (a possible orphaned charge) alerts."""
+    past = datetime.now(UTC) - timedelta(seconds=10)
+    job = _make_job("job-no-alert", JobStatus.GENERATING, past)
+    await redis_store.create_job(redis, job)
+
+    await sweep(redis, None, SHEET_ID, TAB)
+
+    assert sentry_capture_count == [0]
 
 
 async def test_succeeded_job_past_deadline_is_untouched(redis: Redis) -> None:

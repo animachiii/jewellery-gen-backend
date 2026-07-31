@@ -122,6 +122,43 @@ async def test_dedupe_hit_on_succeeded_job_returns_same_id_and_no_second_enqueue
     assert arq_pool.calls == []
 
 
+async def test_dedupe_hit_on_mock_job_is_not_served_to_a_real_request(
+    client: AsyncClient, redis: Redis, arq_pool: FakeArqPool
+) -> None:
+    """R3/R6 money-path regression. `content_hash` deliberately excludes
+    `mock`, so a succeeded mock job and a real request for the same
+    image+service+jewelry_type collide on one dedupe key. Serving the mock
+    job back as `deduplicated: true` silently hands a real, billable request
+    FakeProvider's placeholder asset instead of a real generation.
+
+    This asserts the *read-side* guard specifically: the key is written here
+    directly (as a pre-fix key in Redis would be), so the fix must refuse to
+    serve it even when the write-side guard didn't get a chance to run."""
+    data = _png_bytes(color="green")
+    content_hash = dedupe.content_hash(data, "FEMALE_MODEL_TRADITIONAL", None)
+    prior_mock = _make_job(
+        job_id="prior-mock-succeeded",
+        content_hash=content_hash,
+        status=JobStatus.SUCCEEDED,
+        mock=True,
+    )
+    await create_job(redis, prior_mock)
+    await redis.set(f"dedupe:{content_hash}", prior_mock.job_id)
+
+    async with client as ac:
+        resp = await ac.post(
+            "/api/v1/generate",
+            data={"service": "FEMALE_MODEL_TRADITIONAL", "mock": "false"},
+            files={"image": ("photo.png", data, "image/png")},
+            headers={"X-API-Key": CLIENT_KEY},
+        )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["deduplicated"] is False
+    assert body["job_id"] != "prior-mock-succeeded"
+    assert arq_pool.calls != []
+
+
 async def test_dedupe_miss_after_failed_job_creates_new_job(
     client: AsyncClient, redis: Redis, arq_pool: FakeArqPool
 ) -> None:

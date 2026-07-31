@@ -38,7 +38,8 @@ from uuid import uuid4
 from redis.asyncio import Redis
 
 from app.config import settings
-from app.core.logging import get_logger
+from app.core.logging import bind_job, get_logger
+from app.core.observability import capture_needs_review
 from app.core.state import transition
 from app.models.enums import TERMINAL_STATUSES, ErrorCode, JobStatus, TypeSource
 from app.models.job import Job
@@ -62,8 +63,17 @@ JOB_LOG_TAB = "JobLog"
 # Poll stage tuning. Module-level constants (not settings) so tests can
 # monkeypatch them to near-zero and keep the suite fast; docs/ai-integration.md
 # specifies a 5s poll interval in production.
+#
+# MAX_POLL_ITERATIONS is a defensive ceiling only -- the loop's real bound is
+# the `deadline_at` check on each iteration (docs/ai-integration.md: "Poll
+# interval: 5s, capped by deadline_at"). At the previous value of 10, the
+# effective cap was 10*5s=50s regardless of deadline_at, which silently
+# undershot that documented behavior for any provider slower than ~50s
+# end-to-end (FakeProvider's ~10s default latency never exposed this).
+# 100_000 * 5s (~5.8 days) is high enough that deadline_at is always the
+# real limit for any sane JOB_DEADLINE_SECONDS value.
 POLL_SLEEP_SECONDS = 5.0
-MAX_POLL_ITERATIONS = 10
+MAX_POLL_ITERATIONS = 100_000
 
 # Free-stage retry backoff (R1: 3 attempts, 2s/8s/30s). Tests monkeypatch this
 # to near-zero delays.
@@ -100,7 +110,9 @@ async def _transition_and_persist(
     )
 
     if updated.status in TERMINAL_STATUSES:
-        await record_dedupe(redis, updated.content_hash, updated.job_id, updated.status)
+        await record_dedupe(
+            redis, updated.content_hash, updated.job_id, updated.status, mock=updated.mock
+        )
         row_index = await redis_store.get_row_index(redis, updated.job_id)
         sheets_client_obj = ctx.get("sheets_client")
         sheets_client: SheetsClient | None = (
@@ -234,6 +246,7 @@ async def _submit(redis: Redis, ctx: dict[str, Any], job: Job) -> Job:
         submission = await provider.submit(req)
     except Exception:
         log.warning("provider.submit.failed", job_id=job.job_id)
+        capture_needs_review(job.job_id, reason="provider.submit raised")
         return await _transition_and_persist(
             redis, ctx, job, JobStatus.NEEDS_REVIEW, error_code=ErrorCode.ORPHANED_SUBMIT
         )
@@ -253,7 +266,18 @@ async def _poll(redis: Redis, ctx: dict[str, Any], job: Job) -> Job:
     """Assumes `job.status == GENERATING`. Bounded poll loop within a single
     stage call, capped by `deadline_at`. Leaves the job in `generating` if the
     loop exhausts without a terminal provider state — the sweeper cron reaps
-    it on deadline expiry (R12); this stage does not duplicate that logic."""
+    it on deadline expiry (R12); this stage does not duplicate that logic.
+
+    A poll call failing (after retry_free's own 3 attempts exhaust) does NOT
+    end the loop -- docs/ai-integration.md: "Polling is free — retry it
+    freely." It sleeps and tries again next iteration, same as a successful
+    "pending"/"running" poll, bounded by the same deadline_at check as
+    everything else here. Previously this `break`d out of the whole loop on
+    a single retry_free exhaustion, silently abandoning the job in
+    `generating` until the sweeper reaped it at deadline_at as
+    PROVIDER_TIMEOUT — turning one transient network blip into a permanent
+    stall, found via manual testing against the real Higgsfield MCP bridge.
+    """
     provider = get_provider(mock=job.mock)
     assert job.provider_job_id is not None
 
@@ -268,21 +292,20 @@ async def _poll(redis: Redis, ctx: dict[str, Any], job: Job) -> Job:
             poll_status = await retry_free(_do_poll, delays=RETRY_DELAYS)
         except Exception:
             log.warning("provider.poll.failed", job_id=job.job_id)
-            break
+        else:
+            if poll_status.state == "succeeded":
+                job = await _transition_and_persist(redis, ctx, job, JobStatus.STORING)
+                return await _store(redis, ctx, job)
 
-        if poll_status.state == "succeeded":
-            job = await _transition_and_persist(redis, ctx, job, JobStatus.STORING)
-            return await _store(redis, ctx, job)
-
-        if poll_status.state == "failed":
-            return await _transition_and_persist(
-                redis,
-                ctx,
-                job,
-                JobStatus.FAILED,
-                error_code=ErrorCode.PROVIDER_ERROR,
-                attempt_count=job.attempt_count + 1,
-            )
+            if poll_status.state == "failed":
+                return await _transition_and_persist(
+                    redis,
+                    ctx,
+                    job,
+                    JobStatus.FAILED,
+                    error_code=ErrorCode.PROVIDER_ERROR,
+                    attempt_count=job.attempt_count + 1,
+                )
 
         if datetime.now(UTC) >= job.deadline_at:
             break
@@ -321,12 +344,27 @@ async def _store(redis: Redis, ctx: dict[str, Any], job: Job) -> Job:
 async def _continue_pipeline(redis: Redis, ctx: dict[str, Any], job: Job) -> None:
     """Status-dispatching continuation. A job can be resumed from ANY
     non-terminal status without re-running earlier stages — this is what
-    makes a worker restart safe at any stage boundary."""
+    makes a worker restart safe at any stage boundary.
+
+    Phase 8 Step 6 (log correlation review): wraps the whole dispatch in
+    bind_job() so every log line emitted anywhere in this call tree carries
+    job_id automatically -- including ones outside this module's control
+    that don't already pass job_id as an explicit kwarg (found via this
+    review: app/providers/higgsfield.py's "higgsfield.submit" line and
+    app/services/classifier.py's "classifier.gemini.call_*" lines). Every
+    call site within this module already passes job_id explicitly too
+    (unaffected either way, since _inject_job_id only fills it in when
+    absent), so this is additive, not a behavior change for those lines."""
     status = job.status
 
     if status in TERMINAL_STATUSES:
         return
 
+    with bind_job(job.job_id):
+        await _dispatch(redis, ctx, job, status)
+
+
+async def _dispatch(redis: Redis, ctx: dict[str, Any], job: Job, status: JobStatus) -> None:
     if status == JobStatus.QUEUED:
         if job.jewelry_type_requested is not None:
             # R11: client-supplied type skips classification entirely.
@@ -354,6 +392,7 @@ async def _continue_pipeline(redis: Redis, ctx: dict[str, Any], job: Job) -> Non
         # A fresh entry point found the job already `submitting` — i.e. a
         # worker died mid-submit. R2: never resubmit. Park it for a human.
         log.warning("worker.job.resumed_in_submitting", job_id=job.job_id)
+        capture_needs_review(job.job_id, reason="worker resumed a job already submitting")
         await _transition_and_persist(
             redis, ctx, job, JobStatus.NEEDS_REVIEW, error_code=ErrorCode.ORPHANED_SUBMIT
         )

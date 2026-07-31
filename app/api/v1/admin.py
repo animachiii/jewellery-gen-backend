@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.api.deps import require_admin_key
-from app.api.errors import NotFoundError
-from app.config import settings
+from app.api.errors import NotFoundError, ValidationAppError
+from app.config import reload_api_keys, settings
 from app.core.logging import get_logger
 from app.models.job import Job, _iso
 from app.services.matrix import refresh_matrix
@@ -29,6 +29,10 @@ class MatrixRefreshResponse(BaseModel):
     matrix_version: str
     rows_loaded: int
     changed: bool
+
+
+class KeysReloadResponse(BaseModel):
+    keys_loaded: int
 
 
 class AdminJobResponse(BaseModel):
@@ -86,6 +90,23 @@ async def refresh_matrix_route(
     return MatrixRefreshResponse(
         matrix_version=matrix_version, rows_loaded=rows_loaded, changed=changed
     )
+
+
+@router.post("/admin/keys/reload", response_model=KeysReloadResponse)
+async def reload_keys_route(
+    _admin: Annotated[None, Depends(require_admin_key)],
+) -> KeysReloadResponse:
+    """Phase 7 Step 3 — re-reads `API_KEYS` from the process environment and
+    atomically swaps the in-memory client-key hash map, so a client key can
+    be added or revoked without restarting the API process. Does not touch
+    `admin_api_key` or any other secret (see `app/config.py`'s
+    `reload_api_keys` docstring) and only affects this API process, not the
+    ARQ worker."""
+    try:
+        keys_loaded = reload_api_keys()
+    except ValueError as exc:
+        raise ValidationAppError(str(exc)) from exc
+    return KeysReloadResponse(keys_loaded=keys_loaded)
 
 
 @router.get("/admin/jobs/{job_id}", response_model=AdminJobResponse)

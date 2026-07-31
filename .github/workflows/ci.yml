@@ -40,6 +40,13 @@ jobs:
       - name: Type check (mypy)
         run: mypy app/
 
+      - name: Dependency vulnerability audit (pip-audit)
+        # Findings reviewed and either fixed or explicitly accepted with a
+        # reason — see phases/phase-7-auth-security-hardening.md Step 4. Not
+        # a hard gate: a version with no compatible fix (blocked by another
+        # pin) shouldn't fail every build until upstream catches up.
+        run: pip-audit || true
+
       - name: Test (pytest)
         env:
           ENV: local
@@ -50,4 +57,4 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: "eyJjbGllbnRfZW1haWwiOiAiY2lAZXhhbXBsZS5jb20ifQ=="
           GDRIVE_FOLDER_ID: "ci-folder-id"
           GEMINI_API_KEY: "ci-gemini-key"
-        run: pytest
+        run: pytest --cov=app --cov-report=term-missing
