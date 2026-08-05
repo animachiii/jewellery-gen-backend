@@ -33,6 +33,7 @@ SDK note (introspected against the installed `google-genai==0.3.0`, mirrors
 
 import base64
 import json
+import re
 import time
 from typing import Any
 
@@ -66,15 +67,45 @@ class GeminiImageRequestError(Exception):
     applies identically regardless of which provider raises."""
 
 
+# Matrix rows embed a Google Drive *share* link
+# ("https://drive.google.com/file/d/{id}/view?usp=sharing") -- fetching that
+# URL directly returns Google's HTML viewer page, not the image bytes.
+# Higgsfield never hit this because it receives reference_image_url as a
+# string and fetches it server-side itself; this provider is the first
+# in-process code to actually download it, so the share-link -> direct-
+# download rewrite has to happen here.
+_DRIVE_SHARE_RE = re.compile(r"drive\.google\.com/file/d/([^/]+)")
+
+
+def _to_direct_download_url(url: str) -> str:
+    match = _DRIVE_SHARE_RE.search(url)
+    if not match:
+        return url
+    file_id = match.group(1)
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
 async def _fetch_reference_image(url: str) -> tuple[bytes, str]:
+    direct_url = _to_direct_download_url(url)
     try:
-        async with httpx.AsyncClient(timeout=_REFERENCE_FETCH_TIMEOUT) as client:
-            resp = await client.get(url)
+        async with httpx.AsyncClient(
+            timeout=_REFERENCE_FETCH_TIMEOUT, follow_redirects=True
+        ) as client:
+            resp = await client.get(direct_url)
     except httpx.HTTPError as exc:
         raise GeminiImageRequestError("Failed to fetch reference image") from exc
     if resp.status_code >= 400:
         raise GeminiImageRequestError(f"Reference image fetch returned {resp.status_code}")
     mime = resp.headers.get("content-type", "image/jpeg")
+    if not mime.startswith("image/"):
+        # Drive serves an HTML "can't scan this file for viruses" interstitial
+        # instead of the file itself above a certain size, even on the direct
+        # -download URL. A non-image content-type here means the reference
+        # image didn't actually come through -- fail loudly rather than hand
+        # Gemini an HTML page as an "image" part.
+        raise GeminiImageRequestError(
+            f"Reference image fetch returned non-image content-type {mime!r}"
+        )
     return resp.content, mime
 
 
