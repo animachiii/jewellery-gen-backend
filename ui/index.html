@@ -279,8 +279,14 @@
   // localhost from inside the visitor's browser.
   baseUrlInput.value = localStorage.getItem("jgb_base_url") || window.location.origin;
   apiKeyInput.value = localStorage.getItem("jgb_api_key") || "";
-  baseUrlInput.addEventListener("change", () => localStorage.setItem("jgb_base_url", baseUrlInput.value));
-  apiKeyInput.addEventListener("change", () => localStorage.setItem("jgb_api_key", apiKeyInput.value));
+  baseUrlInput.addEventListener("change", () => {
+    localStorage.setItem("jgb_base_url", baseUrlInput.value);
+    loadMatrix();
+  });
+  apiKeyInput.addEventListener("change", () => {
+    localStorage.setItem("jgb_api_key", apiKeyInput.value);
+    loadMatrix();
+  });
 
   function apiBase() {
     return baseUrlInput.value.replace(/\/+$/, "");
