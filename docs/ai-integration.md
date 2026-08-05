@@ -5,7 +5,7 @@ Two AI calls power the job pipeline in v1. Both sit behind adapters. Nothing in 
 | # | Purpose | Model | Trigger | Cost class |
 |---|---------|-------|---------|-----------|
 | 1 | Jewellery type classification | Gemini 3.1 Flash Lite | `jewelry_type` omitted on submit | cheap, retryable |
-| 2 | Image generation | Higgsfield (abstracted) | Every non-mock job | **expensive, never auto-retried** |
+| 2 | Image generation | Higgsfield or Gemini image (abstracted, `PROVIDER`-selected) | Every non-mock job | **expensive, never auto-retried** |
 
 **No model rewrites, expands, or validates prompts** — see business rule R7.
 
@@ -182,6 +182,35 @@ One or more generated images. Downloaded in the `storing` stage, pushed through 
 | Asset download fails | Retry 3×; then `failed`, `STORAGE_ERROR` |
 
 Poll interval: 5s, capped by `deadline_at`. Polling is free — retry it freely. Submitting is not.
+
+---
+
+## 2a. Generation — Gemini image (behind `GenerationProvider`)
+
+**Module:** `app/providers/gemini_image.py`
+**Model:** `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`) — a separate model/setting from classification's `GEMINI_MODEL`; the two swap independently.
+**Selected via:** `PROVIDER=gemini_image`. Not a fallback for a missing `HIGGSFIELD_API_KEY` — must be explicitly chosen.
+
+Unlike Higgsfield, Gemini image generation is a single synchronous call — there is no provider-side submit/poll/fetch lifecycle. To fit the three-stage `GenerationProvider` protocol (a fresh provider instance per stage, per `app/providers/fake.py`'s stateless-instance design), the entire generation happens inside `submit()`:
+
+1. Fetch `reference_image_url` (the matrix reference image).
+2. Call Gemini with `[prompt, source_image, reference_image]` and `response_modalities=["TEXT", "IMAGE"]`.
+3. Extract the image part(s) from the response.
+4. Base64-encode the resulting image bytes + mime into `provider_job_id` itself — there is no real Gemini-side job to reference.
+
+`poll()` and `fetch_assets()` make no network call; they only decode what `submit()` already produced. `poll()` always reports `succeeded` (or `failed` if `provider_job_id` fails to decode — a corrupted/foreign value, not a retryable state).
+
+**Consequence:** `provider_job_id` for this provider is an encoded image payload, not an opaque handle — unusually large for a Redis hash field (`job:{job_id}`, docs/schema.md §3). Fine at expected volumes; revisit if generated images grow large enough to strain the 48h job TTL.
+
+### Failure handling
+| Condition | Behaviour |
+|-----------|-----------|
+| Reference image fetch fails | `GeminiImageRequestError` inside `submit()` → same `needs_review`/`ORPHANED_SUBMIT` handling as any submit-stage exception (R1) |
+| Gemini call fails / times out | Same — `submit()` raises, never auto-retried |
+| Response contains no image part | Same — treated as a submit failure, not a partial success |
+| `provider_job_id` fails to decode at poll/fetch time | `failed`, not retried — indicates corruption, not a transient issue |
+
+**Not yet wired into any worker orchestration distinction** between a confirmed-no-charge failure and an ambiguous one — mirrors Higgsfield's current uniform `ORPHANED_SUBMIT` mapping (see `HiggsfieldSubmitRejectedError`'s docstring); the same future refinement applies here.
 
 ---
 

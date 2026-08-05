@@ -272,9 +272,10 @@ No code change was made as a result of this review — the plaintext-in-memory t
 | `GEMINI_API_KEY` | yes | — | |
 | `GEMINI_MODEL` | no | `gemini-3.1-flash-lite` | See `docs/ai-integration.md` §1 for why — `gemini-2.5-flash`/`-flash-lite` are 404 "no longer available to new users" on this project's API key, confirmed via live smoke test |
 | `CLASSIFIER_CONFIDENCE_THRESHOLD` | no | `0.75` | Below → `needs_input` |
+| `GEMINI_IMAGE_MODEL` | no | `gemini-2.5-flash-image` | Used only when `PROVIDER=gemini_image` (`app/providers/gemini_image.py`). Separate model/setting from `GEMINI_MODEL` — classification and image generation swap independently |
 | `HIGGSFIELD_API_KEY` | yes (prod) | — | |
 | `HIGGSFIELD_BASE_URL` | no | `https://api.higgsfield.ai` | **Unconfirmed placeholder** — see `phases/phase-4-provider-integration.md` → Manual Verification |
-| `PROVIDER` | no | `higgsfield` | `higgsfield` \| `fake` \| `higgsfield_mcp_bridge` |
+| `PROVIDER` | no | `higgsfield` | `higgsfield` \| `fake` \| `higgsfield_mcp_bridge` \| `gemini_image` |
 | `HIGGSFIELD_MCP_BRIDGE_URL` | no | `http://127.0.0.1:8799` | Testing/showcase-only local MCP bridge sidecar; used only when `PROVIDER=higgsfield_mcp_bridge`. See `app/providers/higgsfield_mcp_bridge.py` |
 | `MAX_IMAGE_BYTES` | no | `15728640` | 15 MB |
 | `JOB_DEADLINE_SECONDS` | no | `900` | 15 min |

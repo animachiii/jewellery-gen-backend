@@ -19,9 +19,16 @@ services:
         value: prod
       - key: STORAGE_BACKEND
         value: supabase
+      - key: PROVIDER
+        value: gemini_image
+      # Generation runs on Gemini image (app/providers/gemini_image.py) --
+      # no Higgsfield account/key needed for this deploy. GEMINI_IMAGE_MODEL
+      # is optional (defaults to gemini-2.5-flash-image in app/config.py);
+      # only set it here if overriding.
+      #
       # REDIS_URL, API_KEYS, ADMIN_API_KEY, GOOGLE_SHEET_ID,
       # GOOGLE_SERVICE_ACCOUNT_JSON, GDRIVE_FOLDER_ID, SUPABASE_URL,
       # SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET, GEMINI_API_KEY,
-      # HIGGSFIELD_API_KEY, SENTRY_DSN are secrets -- set them in the Render
-      # dashboard (Environment tab), never here. See
-      # docs/deployment-free-tier.md for the full list and sources.
+      # SENTRY_DSN are secrets -- set them in the Render dashboard
+      # (Environment tab), never here. See docs/deployment-free-tier.md for
+      # the full list and sources.

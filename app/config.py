@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     classifier_confidence_threshold: float = Field(
         default=0.75, alias="CLASSIFIER_CONFIDENCE_THRESHOLD"
     )
+    # Used only when PROVIDER=gemini_image (app/providers/gemini_image.py).
+    # Separate from gemini_model -- classification and image generation are
+    # different Gemini model families and swap independently.
+    gemini_image_model: str = Field(
+        default="gemini-2.5-flash-image", alias="GEMINI_IMAGE_MODEL"
+    )
 
     higgsfield_api_key: str | None = Field(default=None, alias="HIGGSFIELD_API_KEY")
     # PLACEHOLDER default -- unconfirmed real Higgsfield base URL, see
@@ -80,7 +86,7 @@ class Settings(BaseSettings):
     higgsfield_base_url: str = Field(
         default="https://api.higgsfield.ai", alias="HIGGSFIELD_BASE_URL"
     )
-    provider: Literal["higgsfield", "fake", "higgsfield_mcp_bridge"] = Field(
+    provider: Literal["higgsfield", "fake", "higgsfield_mcp_bridge", "gemini_image"] = Field(
         default="higgsfield", alias="PROVIDER"
     )
     # TESTING/SHOWCASE ONLY -- see app/providers/higgsfield_mcp_bridge.py.
