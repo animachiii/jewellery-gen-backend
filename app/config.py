@@ -137,6 +137,25 @@ class Settings(BaseSettings):
     # topology, which runs api and worker as separate processes as designed.
     worker_in_process: bool = Field(default=False, alias="WORKER_IN_PROCESS")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_whitespace_from_string_values(cls, data: object) -> object:
+        """Deploy platforms (Render/Railway dashboards, `docker run
+        --env-file`) inject raw OS environment variables directly -- unlike
+        pydantic-settings' own `.env`-file loading (python-dotenv), that path
+        does NOT strip incidental leading/trailing whitespace from a pasted
+        value. A single leading space in a copy-pasted secret (found in
+        practice: a `SUPABASE_SERVICE_ROLE_KEY` pasted with a leading space)
+        passes silently in local `.env`-based dev and testing (dotenv strips
+        it there) and then breaks in real deployment with an opaque httpx
+        "Illegal header value" error at request time -- nowhere near this
+        config, and hard to trace back here. Stripped once, for every string
+        value, before any other validation (including the field-level
+        `_parse_*_field` validators below) runs."""
+        if isinstance(data, dict):
+            return {k: (v.strip() if isinstance(v, str) else v) for k, v in data.items()}
+        return data
+
     @field_validator("api_keys", mode="before")
     @classmethod
     def _parse_api_keys_field(cls, v: object) -> dict[str, str]:

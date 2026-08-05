@@ -111,7 +111,17 @@
   }
   .call-error.visible { display: block; }
   .assets { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-  .assets img { max-width: 220px; border-radius: 6px; border: 1px solid var(--border); }
+  .asset-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .asset-item img { max-width: 220px; border-radius: 6px; border: 1px solid var(--border); }
+  .asset-download-link {
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 4px 10px;
+  }
+  .asset-download-link:hover { background: #f5efe6; }
   .candidates { margin-top: 10px; }
   .candidates ul { padding-left: 18px; margin: 6px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -137,7 +147,7 @@
     <div class="row">
       <div class="field">
         <label for="base-url">API base URL</label>
-        <input type="text" id="base-url" value="http://localhost:8000" />
+        <input type="text" id="base-url" value="" placeholder="http://localhost:8000" />
       </div>
       <div class="field">
         <label for="api-key">API key (X-API-Key)</label>
@@ -260,7 +270,14 @@
 
   const baseUrlInput = $("base-url");
   const apiKeyInput = $("api-key");
-  baseUrlInput.value = localStorage.getItem("jgb_base_url") || baseUrlInput.value;
+  // Default to same-origin, not a hardcoded localhost -- this page is always
+  // served by the exact API it's meant to talk to (StaticFiles mounted in
+  // the same FastAPI app, app/main.py), whether that's local dev or a real
+  // deploy (Render/Railway). A hardcoded "http://localhost:8000" default
+  // broke the very first live-deploy test: the page loaded fine from
+  // https://<service>.onrender.com but then tried to reach a nonexistent
+  // localhost from inside the visitor's browser.
+  baseUrlInput.value = localStorage.getItem("jgb_base_url") || window.location.origin;
   apiKeyInput.value = localStorage.getItem("jgb_api_key") || "";
   baseUrlInput.addEventListener("change", () => localStorage.setItem("jgb_base_url", baseUrlInput.value));
   apiKeyInput.addEventListener("change", () => localStorage.setItem("jgb_api_key", apiKeyInput.value));
@@ -536,10 +553,29 @@
       const resp = await fetch(apiBase() + asset.url, { headers: { "X-API-Key": apiKey() } });
       if (!resp.ok) throw new Error("asset fetch failed: " + resp.status);
       const blob = await resp.blob();
+      // Same bytes the API returned -- no re-encoding, no resizing. The
+      // <img> below and the download link both point at this one blob, so
+      // "download" is guaranteed byte-identical to what's displayed and to
+      // what storage actually holds.
+      const objectUrl = URL.createObjectURL(blob);
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "asset-item";
+
       const img = document.createElement("img");
-      img.src = URL.createObjectURL(blob);
+      img.src = objectUrl;
       img.alt = "asset " + asset.index;
-      container.appendChild(img);
+      wrapper.appendChild(img);
+
+      const ext = (asset.mime.split("/")[1] || "png").replace("jpeg", "jpg");
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "job-" + jobId + "-asset-" + asset.index + "." + ext;
+      link.className = "asset-download-link";
+      link.textContent = "Download full quality";
+      wrapper.appendChild(link);
+
+      container.appendChild(wrapper);
     } catch (err) {
       const span = document.createElement("div");
       span.className = "error-box";

@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -5,8 +6,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-import asyncio
 
 import structlog
 from arq.connections import RedisSettings, create_pool
