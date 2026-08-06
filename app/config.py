@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     # Separate from gemini_model -- classification and image generation are
     # different Gemini model families and swap independently.
     gemini_image_model: str = Field(
-        default="gemini-2.5-flash-image", alias="GEMINI_IMAGE_MODEL"
+        default="gemini-3.1-flash-image", alias="GEMINI_IMAGE_MODEL"
     )
 
     higgsfield_api_key: str | None = Field(default=None, alias="HIGGSFIELD_API_KEY")

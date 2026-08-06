@@ -188,7 +188,7 @@ Poll interval: 5s, capped by `deadline_at`. Polling is free — retry it freely.
 ## 2a. Generation — Gemini image (behind `GenerationProvider`)
 
 **Module:** `app/providers/gemini_image.py`
-**Model:** `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`) — a separate model/setting from classification's `GEMINI_MODEL`; the two swap independently.
+**Model:** `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`) — a separate model/setting from classification's `GEMINI_MODEL`; the two swap independently.
 **Selected via:** `PROVIDER=gemini_image`. Not a fallback for a missing `HIGGSFIELD_API_KEY` — must be explicitly chosen.
 
 Unlike Higgsfield, Gemini image generation is a single synchronous call — there is no provider-side submit/poll/fetch lifecycle. To fit the three-stage `GenerationProvider` protocol (a fresh provider instance per stage, per `app/providers/fake.py`'s stateless-instance design), the entire generation happens inside `submit()`:
