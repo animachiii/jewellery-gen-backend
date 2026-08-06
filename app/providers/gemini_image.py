@@ -146,7 +146,15 @@ class GeminiImageProvider:
             )
         except Exception as exc:
             latency_ms = int((time.monotonic() - start) * 1000)
-            log.warning("gemini_image.call_failed", model=model, latency_ms=latency_ms)
+            # Exception text/type only -- no image bytes, base64, or API key
+            # ever land in this string (docs/ai-integration.md §4).
+            log.warning(
+                "gemini_image.call_failed",
+                model=model,
+                latency_ms=latency_ms,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
             raise GeminiImageRequestError("Gemini image generation call failed") from exc
 
         assets = self._extract_assets(response)
