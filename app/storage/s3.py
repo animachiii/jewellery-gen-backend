@@ -43,8 +43,10 @@ class S3StorageError(Exception):
 
 
 def _is_retryable(exc: S3ApiError) -> bool:
-    # 503 SlowDown is S3's throttle response; 5xx is transient server error.
-    # Everything else (400, 403, 404) is terminal.
+    # 429 is special-cased for parity with SupabaseStorage, whose backend
+    # throttles with 429; S3 itself throttles with 503 SlowDown, which is
+    # already covered by the >=500 branch below. Everything else (400, 403,
+    # 404) is terminal.
     return exc.status == 429 or exc.status >= 500
 
 

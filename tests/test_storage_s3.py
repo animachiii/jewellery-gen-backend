@@ -132,6 +132,36 @@ async def test_a_terminal_failure_is_not_retried() -> None:
     assert client.upload_calls == 1, "a 403 must not be retried"
 
 
+@pytest.mark.asyncio
+async def test_rate_limit_failure_retries_then_raises() -> None:
+    """429 is retryable, but if every attempt fails, retries eventually
+    exhaust and a terminal S3StorageError is raised — the untested branch
+    at the bottom of _retry_s3_call. Mirrors
+    tests/test_storage_supabase.py::test_rate_limit_failure_retries_then_raises."""
+    client = FakeS3Client(fail_times=10, status=429)
+    storage = S3Storage(client, BUCKET, retry_delays=(0.0, 0.0, 0.0))
+
+    with pytest.raises(S3StorageError):
+        await storage.put(b"bytes", "x.jpg", "image/jpeg")
+
+    # 1 initial attempt + len(retry_delays) retries, all failing.
+    assert client.upload_calls == 4
+
+
+@pytest.mark.asyncio
+async def test_server_error_retries_then_raises() -> None:
+    """Same exhaustion path as above, driven by a 500-shaped failure instead
+    of a 429-shaped one. Mirrors
+    tests/test_storage_supabase.py::test_server_error_retries_then_raises."""
+    client = FakeS3Client(fail_times=10, status=500)
+    storage = S3Storage(client, BUCKET, retry_delays=(0.0, 0.0, 0.0))
+
+    with pytest.raises(S3StorageError):
+        await storage.put(b"bytes", "x.jpg", "image/jpeg")
+
+    assert client.upload_calls == 4
+
+
 def test_factory_resolves_s3_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.config import settings
     from app.storage.factory import get_storage_adapter

@@ -40,6 +40,7 @@ from app.storage.base import StorageAdapter
 from app.storage.drive import DriveStorageError
 from app.storage.factory import get_storage_adapter
 from app.storage.local import StorageRefNotFoundError
+from app.storage.s3 import S3StorageError
 from app.storage.supabase import SupabaseStorageError
 from app.store.redis_store import list_recent, update_job
 
@@ -137,7 +138,12 @@ async def get_job_asset_route(
     storage: StorageAdapter = get_storage_adapter()
     try:
         data, mime = await storage.get(job.asset_refs[index])
-    except (StorageRefNotFoundError, DriveStorageError, SupabaseStorageError) as exc:
+    except (
+        StorageRefNotFoundError,
+        DriveStorageError,
+        S3StorageError,
+        SupabaseStorageError,
+    ) as exc:
         raise StorageError("Stored asset could not be retrieved.") from exc
 
     return Response(

@@ -143,7 +143,7 @@ async def _check_storage() -> dict[str, Any]:
     never uploads/downloads a real file (that's Phase 2's separate manual
     smoke test, not a per-request health check cost). A clean `True`/`False`
     result proves the backend answered; an adapter-specific exception
-    (DriveStorageError, SupabaseStorageError) means it didn't."""
+    (DriveStorageError, SupabaseStorageError, S3StorageError) means it didn't."""
     try:
         adapter = get_storage_adapter()
         await adapter.exists("__health_check_sentinel__")
