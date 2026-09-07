@@ -264,11 +264,13 @@ No code change was made as a result of this review — the plaintext-in-memory t
 | `GOOGLE_SHEET_ID` | yes | — | Spreadsheet holding both tabs |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | yes | — | Base64 of the service account key |
 | `GDRIVE_FOLDER_ID` | required if `STORAGE_BACKEND=drive` | — | Destination folder for `DriveStorage` (built, tested, unused — `supabase` is the active production backend). Not needed at all otherwise; enforced by a conditional validator in `app/config.py`, same pattern as the `SUPABASE_*` vars |
-| `STORAGE_BACKEND` | no | `local` | `local` \| `drive` \| `supabase`. Phase 2 adapter selector |
+| `STORAGE_BACKEND` | no | `local` | `local` \| `drive` \| `supabase` \| `s3`. Phase 2 adapter selector |
 | `LOCAL_STORAGE_DIR` | no | `./data/storage` | Filesystem root used only when `STORAGE_BACKEND=local` (tests/dev) |
 | `SUPABASE_URL` | required if `STORAGE_BACKEND=supabase` | — | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | required if `STORAGE_BACKEND=supabase` | — | Service role key (bypasses RLS on the storage bucket) |
 | `SUPABASE_STORAGE_BUCKET` | required if `STORAGE_BACKEND=supabase` | — | Private bucket name for source images and generated assets |
+| `S3_BUCKET` | required if `STORAGE_BACKEND=s3` | — | S3 bucket name for source images and generated assets. Enforced by a conditional validator in `app/config.py`, same pattern as `SUPABASE_*`/`GDRIVE_FOLDER_ID` |
+| `AWS_REGION` | no | `ap-south-1` | Region for the S3 client, used only when `STORAGE_BACKEND=s3`. Credentials come from boto3's default chain (env vars locally, instance profile in production) — never a Settings field |
 | `GEMINI_API_KEY` | yes | — | |
 | `GEMINI_MODEL` | no | `gemini-3.1-flash-lite` | See `docs/ai-integration.md` §1 for why — `gemini-2.5-flash`/`-flash-lite` are 404 "no longer available to new users" on this project's API key, confirmed via live smoke test |
 | `CLASSIFIER_CONFIDENCE_THRESHOLD` | no | `0.75` | Below → `needs_input` |

@@ -15,6 +15,7 @@ the EC2 instance profile in production. Never passed explicitly.
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Protocol, TypeVar
+from uuid import uuid4
 
 import boto3
 from botocore.client import Config
@@ -124,3 +125,42 @@ async def _retry_s3_call(
                 await asyncio.sleep(delays[attempt])
     assert last_exc is not None
     raise S3StorageError("S3 operation failed after retries.") from last_exc
+
+
+class S3Storage:
+    """S3-backed StorageAdapter. Objects go into `bucket`; the generated
+    uuid4 hex key is used directly as the opaque storage_ref — same scheme
+    SupabaseStorage uses, so refs are interchangeable in shape and nothing
+    outside app/storage/ can tell the backends apart."""
+
+    def __init__(
+        self,
+        client: S3Client,
+        bucket: str,
+        *,
+        retry_delays: tuple[float, ...] = DEFAULT_DELAYS,
+    ) -> None:
+        self._client = client
+        self._bucket = bucket
+        self._retry_delays = retry_delays
+
+    async def put(self, data: bytes, filename: str, mime: str) -> str:
+        ref = uuid4().hex
+
+        async def _do() -> str:
+            await self._client.upload(self._bucket, ref, data, mime)
+            return ref
+
+        return await _retry_s3_call(_do, delays=self._retry_delays)
+
+    async def get(self, ref: str) -> tuple[bytes, str]:
+        async def _do() -> tuple[bytes, str]:
+            return await self._client.download(self._bucket, ref)
+
+        return await _retry_s3_call(_do, delays=self._retry_delays)
+
+    async def exists(self, ref: str) -> bool:
+        async def _do() -> bool:
+            return await self._client.exists(self._bucket, ref)
+
+        return await _retry_s3_call(_do, delays=self._retry_delays)

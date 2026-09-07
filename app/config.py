@@ -96,13 +96,20 @@ class Settings(BaseSettings):
     )
 
     local_storage_dir: str = Field(default="./data/storage", alias="LOCAL_STORAGE_DIR")
-    storage_backend: Literal["local", "drive", "supabase"] = Field(
+    storage_backend: Literal["local", "drive", "supabase", "s3"] = Field(
         default="local", alias="STORAGE_BACKEND"
     )
 
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_service_role_key: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
     supabase_storage_bucket: str | None = Field(default=None, alias="SUPABASE_STORAGE_BUCKET")
+
+    # Required only when STORAGE_BACKEND=s3, enforced below. Credentials come
+    # from boto3's default chain (env vars locally, instance profile in
+    # production) -- never a Settings field, same reasoning as Supabase's
+    # service_role_key being the only S3-adjacent secret this file holds.
+    s3_bucket: str | None = Field(default=None, alias="S3_BUCKET")
+    aws_region: str = Field(default="ap-south-1", alias="AWS_REGION")
 
     # Testing/dev-only knob for FakeProvider failure injection (not a deployment var).
     fake_fail_mode: Literal["submit", "poll", "timeout", "none"] = Field(
@@ -212,6 +219,12 @@ class Settings(BaseSettings):
     def _require_gdrive_folder_id_when_selected(self) -> "Settings":
         if self.storage_backend == "drive" and not self.gdrive_folder_id:
             raise ValueError("GDRIVE_FOLDER_ID is required when STORAGE_BACKEND=drive")
+        return self
+
+    @model_validator(mode="after")
+    def _require_s3_config_when_selected(self) -> "Settings":
+        if self.storage_backend == "s3" and not self.s3_bucket:
+            raise ValueError("S3_BUCKET is required when STORAGE_BACKEND=s3")
         return self
 
     def __repr__(self) -> str:
