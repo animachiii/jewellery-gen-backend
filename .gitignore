@@ -19,3 +19,4 @@ data/
 .claude/
 .coverage
 scripts/higgsfield_mcp_prototype/.higgsfield_mcp_token.json
+.worktrees/
