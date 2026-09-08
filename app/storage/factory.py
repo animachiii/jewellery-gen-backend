@@ -9,7 +9,8 @@ def get_storage_adapter() -> StorageAdapter:
     Defaults to LocalStorage (`STORAGE_BACKEND=local`) so Phase 1's behaviour
     and test suite remain regression-free by default. `STORAGE_BACKEND=drive`
     resolves to DriveStorage; `STORAGE_BACKEND=supabase` resolves to
-    SupabaseStorage — no other code change required either way.
+    SupabaseStorage; `STORAGE_BACKEND=s3` resolves to S3Storage — no other
+    code change required either way.
     """
     if settings.storage_backend == "drive":
         from app.storage.drive import DriveStorage, GoogleDriveClient
@@ -27,4 +28,9 @@ def get_storage_adapter() -> StorageAdapter:
             settings.supabase_url, settings.supabase_service_role_key
         )
         return SupabaseStorage(supabase_client, settings.supabase_storage_bucket)
+    if settings.storage_backend == "s3":
+        from app.storage.s3 import Boto3S3Client, S3Storage
+
+        assert settings.s3_bucket is not None
+        return S3Storage(Boto3S3Client(settings.aws_region), settings.s3_bucket)
     return LocalStorage()

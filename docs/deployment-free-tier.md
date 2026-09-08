@@ -26,6 +26,8 @@ Same set as `docs/deployment.md` §2, entered in Render's dashboard (Environment
 - `WORKER_IN_PROCESS=true` — set in `render.yaml` directly (not secret-shaped, safe to commit).
 - No `RAILWAY_TOKEN`/GitHub Actions deploy step is required for this path — Render deploys automatically on push when the GitHub repo is connected via its own dashboard integration (Render's native flow, not `.github/workflows/deploy.yml`, which is Railway-specific). If deploy auditability via Actions matters, a parallel `deploy-render.yml` using Render's deploy-hook URL as a secret could be added later — not built in this pass since it wasn't asked for.
 
+**Storage backend alternative:** `render.yaml` defaults `STORAGE_BACKEND=supabase`, same as the Railway path. `STORAGE_BACKEND=s3` (`app/storage/s3.py`) is also selectable here if preferred — set `S3_BUCKET` and `AWS_REGION` as plain env vars (not secret-shaped, safe to commit alongside `STORAGE_BACKEND`), and supply AWS credentials via `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` as Render secrets (boto3's default credential chain picks these up automatically — no code change, no explicit credential wiring in `Settings`). Does not change the free-tier tradeoffs above; Supabase remains the default because it's what's actually deployed and verified end-to-end.
+
 ## First deploy checklist
 
 1. Create a free Upstash Redis database, copy its `REDIS_URL`.

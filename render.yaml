@@ -32,3 +32,11 @@ services:
       # SENTRY_DSN are secrets -- set them in the Render dashboard
       # (Environment tab), never here. See docs/deployment-free-tier.md for
       # the full list and sources.
+      #
+      # STORAGE_BACKEND=s3 is also available (app/storage/s3.py) as an
+      # alternative to supabase above -- if selected instead, set S3_BUCKET
+      # and AWS_REGION as env vars here (not secrets) and give AWS
+      # credentials to the service via the environment (AWS_ACCESS_KEY_ID /
+      # AWS_SECRET_ACCESS_KEY as Render secrets) or an instance profile if
+      # the host supports one; boto3's default credential chain picks either
+      # up with no code change.

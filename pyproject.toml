@@ -18,6 +18,7 @@ dependencies = [
     "pillow==11.1.0",
     "python-multipart==0.0.31",
     "sentry-sdk[fastapi]==2.19.2",
+    "boto3==1.35.99",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ dev = [
     "ruff==0.8.6",
     "mypy==1.14.1",
     "pip-audit==2.7.3",
+    "moto[s3]==5.0.28",
 ]
 
 [tool.ruff]
@@ -43,6 +45,10 @@ python_version = "3.12"
 
 [[tool.mypy.overrides]]
 module = ["googleapiclient.*", "google.oauth2.*", "google.auth.*", "google.genai.*", "google"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
