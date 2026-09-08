@@ -3,7 +3,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes: !reset []
     environment:
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set in .env for the EC2 deployment}
     depends_on: !reset {}
     ports: !override
       - "8001:8000"
@@ -12,6 +12,9 @@ services:
   worker:
     volumes: !reset []
     environment:
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set in .env for the EC2 deployment}
     depends_on: !reset {}
     restart: unless-stopped
+
+  redis:
+    ports: !reset []
