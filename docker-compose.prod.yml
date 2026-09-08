@@ -1,0 +1,17 @@
+services:
+  api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes: !reset []
+    environment:
+      REDIS_URL: ${REDIS_URL}
+    depends_on: !reset {}
+    ports: !override
+      - "8001:8000"
+    restart: unless-stopped
+
+  worker:
+    volumes: !reset []
+    environment:
+      REDIS_URL: ${REDIS_URL}
+    depends_on: !reset {}
+    restart: unless-stopped
